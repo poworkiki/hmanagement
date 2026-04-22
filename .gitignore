@@ -1,0 +1,70 @@
+# ── Environnement & secrets ──────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── Node / Next.js ───────────────────────────────────────
+node_modules/
+.next/
+out/
+build/
+dist/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# ── Tests & coverage ─────────────────────────────────────
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.playwright-cache/
+.vitest-cache/
+
+# ── dbt ──────────────────────────────────────────────────
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/profiles.local.yml
+.user.yml
+
+# ── Supabase ─────────────────────────────────────────────
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+
+# ── Python (dbt, n8n scripts) ────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.Python
+*.egg-info/
+
+# ── IDE & OS ─────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Claude Code local ────────────────────────────────────
+.claude/settings.local.json
+.claude/.credentials.json
+
+# ── Logs & temp ──────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnp.*
+tmp/
+temp/
