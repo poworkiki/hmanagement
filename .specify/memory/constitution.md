@@ -1,3 +1,28 @@
+<!--
+SYNC IMPACT REPORT
+==================
+Version change: 0.2 (prose) → 0.2.0 (semver, no semantic amendment)
+Change type: Format normalization — adoption semver + governance footer spec-kit
+Rationale: PATCH-level formalization. Aucun principe n'a été ajouté, retiré ou redéfini ;
+seule la métadonnée de gouvernance est rendue conforme au template spec-kit.
+
+Modified principles (renommés) : aucun
+Added sections :
+  - HTML Sync Impact Report (ce bloc)
+  - Footer Governance standardisé (Version | Ratified | Last Amended)
+Removed sections : aucune
+
+Templates requiring updates :
+  - .specify/templates/plan-template.md      ✅ compatible (Constitution Check est générique)
+  - .specify/templates/spec-template.md      ✅ compatible (pas de référence constitutionnelle directe)
+  - .specify/templates/tasks-template.md     ✅ compatible (pas de référence constitutionnelle directe)
+  - .specify/templates/checklist-template.md ✅ compatible
+  - CLAUDE.md                                ✅ aligné (stack, RLS, tests bloquants, 12 articles cohérents)
+  - README.md                                ✅ aligné
+
+Follow-up TODOs : aucun placeholder différé.
+-->
+
 # Constitution hmanagement
 
 ## Préambule
@@ -7,7 +32,7 @@ Toute décision technique et tout développement doivent s'y conformer.
 Pour dévier d'un principe, une revue d'architecture formelle est requise
 (discussion explicite + mise à jour de ce document + commit dédié).
 
-Dernière révision : Sprint 0 — avril 2026 — v0.2
+Dernière révision : Sprint 0 — 22 avril 2026 — v0.2.0
 
 ---
 
@@ -263,4 +288,26 @@ Toute modification nécessite un commit dédié de type `docs(constitution):`.
 
 Propriétaire : Kiki — POWOR_BUSINESS
 Projet : hmanagement
-Version : 0.2 — Sprint 0 (avril 2026)
+
+## Governance
+
+La présente constitution prévaut sur toute autre pratique, convention ou outillage interne.
+
+### Procédure d'amendement
+- Tout amendement **MUST** faire l'objet d'un commit dédié `docs(constitution): ...`
+- Le Sync Impact Report en en-tête **MUST** être mis à jour à chaque amendement
+- Les templates dépendants (`.specify/templates/*.md`) et `CLAUDE.md` **MUST** être revus pour cohérence
+- Seul le propriétaire produit (Kiki / super_admin) valide les amendements MAJOR
+
+### Politique de versioning (semver)
+- **MAJOR** : retrait ou redéfinition d'un principe, changement de gouvernance incompatible
+- **MINOR** : ajout d'un principe ou expansion matérielle de guidance
+- **PATCH** : clarifications, typos, normalisations de format sans impact sémantique
+
+### Revue de conformité
+- Toute PR **MUST** respecter les articles 1 à 12 ou justifier l'exception dans un ADR
+- La gateway SDD (Article 8) **MUST** être appliquée pour toute feature > 2 jours
+- Les tests bloquants MVP (Article 6) **MUST** être verts avant tout merge sur `main`
+- Revue trimestrielle obligatoire des ADR et de la dette technique (Article 11)
+
+**Version**: 0.2.0 | **Ratified**: 2026-04-21 | **Last Amended**: 2026-04-22
