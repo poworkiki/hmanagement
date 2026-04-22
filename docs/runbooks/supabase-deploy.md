@@ -23,10 +23,11 @@ curl -I https://coolify.hma.business
 # → doit renvoyer 200 ou 302
 ```
 
-- [ ] Les 12 secrets `supabase-selfhost-*` existent dans Vaultwarden
+- [ ] Les 11 secrets `supabase-selfhost-*` existent dans Vaultwarden (9 Supabase-direct + 2 OIDC Authentik)
 - [ ] Bucket R2 `hma-supabase-backups` créé avec API key active
-- [ ] Brevo SMTP accessible, domaine `hma.business` vérifié (SPF/DKIM/DMARC verts)
-- [ ] Canal Telegram ops configuré, bot `hmagents_bot` membre
+- [ ] **Authentik** (`auth.hma.business`) opérationnel : app OAuth `supabase-hma` créée, groupe `supabase-hma-admins` avec policy MFA, client_id + client_secret générés (décision /speckit-clarify 2026-04-22)
+- [ ] Chat Telegram HMA existant identifié, `chat_id` récupéré et stocké dans Vaultwarden (`supabase-selfhost-telegram-chat-id`)
+- [ ] Cold storage papier de `supabase-selfhost-restic-password` en place (T023.5 gate)
 
 ## Phase 1 — Création de l'app Supabase dans Coolify
 

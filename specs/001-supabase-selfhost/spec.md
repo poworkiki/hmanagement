@@ -5,6 +5,13 @@
 **Status**: Draft
 **Input**: User description: "Supabase self-hosted (option #1 du cadrage Sprint 1) — plateforme data souveraine hébergée sur infrastructure sous contrôle, pré-requis de toutes les autres features MVP hmanagement"
 
+## Clarifications
+
+### Session 2026-04-22
+
+- Q: Comment gérer le descope des tâches T014-T017 (création compte Brevo SMTP) et T024-T025 (création chat Telegram ops) sans casser US2 (auth MFA) ni US5 (notifications) ? → A: **Authentik OIDC comme IdP délégué**. L'authentification utilisateur (Magic Link, MFA TOTP, session) est entièrement déléguée au serveur Authentik self-hosted existant (`auth.hma.business`). GoTrue (Supabase) est configuré comme **OIDC relying party** d'Authentik. Conséquences : (a) aucun compte Brevo à créer — Authentik utilise son propre SMTP ; (b) les FR-006/007/008/009/010/013 restent valides mais leur **implémentation** est côté Authentik, pas côté GoTrue natif ; (c) nouveaux env vars GoTrue à prévoir : `GOTRUE_EXTERNAL_OIDC_*` ; (d) une feature ultérieure pourra revenir sur ce choix si l'ouverture multi-tenant l'exige (Strangler Fig Art. 11.1) ; (e) tasks.md à retravailler : T014-T017 supprimés, remplacés par des tâches de configuration OIDC côté Authentik + côté GoTrue.
+- Q: Quel canal pour les notifications backup/monitoring maintenant que la création d'un nouveau chat Telegram (T024) est descopée ? → A: **Réutiliser un chat Telegram HMA existant** via le bot `hmagents_bot` (déjà dans Vaultwarden, alimente déjà n8n/Authentik). Conséquences : (a) US5 et FR-018/020/021/022 restent intacts ; (b) T024 (créer un nouveau chat) est supprimée, T025 (stocker chat_id) se transforme en "récupérer le chat_id existant depuis Vaultwarden ou l'historique Telegram" ; (c) les scripts déjà écrits (`pg-backup.sh`, `disk-alert.sh`) ne changent pas — ils utilisent `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` env vars ; (d) risque cosmétique de mélange avec d'autres notifications (n8n, Authentik) → atténué par le préfixe `[supabase-backup]` / `[restore-drill]` / `[disk-alert]` déjà présent dans les scripts.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Le super-admin dispose d'une plateforme data opérationnelle (Priority: P1)
@@ -115,7 +122,7 @@ Si la plateforme devient injoignable, si une sauvegarde échoue, ou si une erreu
 
 **Authentification et sécurité**
 
-- **FR-006**: La plateforme **MUST** fournir un mécanisme d'authentification par lien magique envoyé par email.
+- **FR-006**: La plateforme **MUST** déléguer l'authentification utilisateur à un fournisseur **OIDC self-hosted** (Authentik à `auth.hma.business`). Le mécanisme visible côté utilisateur — lien magique email, MFA TOTP, session — est implémenté **par l'IdP**. La plateforme (GoTrue / Supabase) est configurée comme **OIDC relying party** et accepte uniquement les identités authentifiées par l'IdP.
 - **FR-007**: La plateforme **MUST** rendre obligatoire l'activation d'un second facteur TOTP pour les rôles super-admin et admin avant toute utilisation opérationnelle.
 - **FR-008**: La plateforme **MUST** imposer une expiration de session automatique. Cibles : 8 heures maximum pour un utilisateur standard, 1 heure maximum pour un administrateur. **En MVP**, seuls des comptes administrateur existent et la plateforme applique donc uniformément la borne la plus stricte (1 heure) ; la différenciation "8 heures utilisateur standard" sera ajoutée par la couche applicative dès l'introduction des rôles non-administrateur (features ultérieures `002-schemas-rls-bootstrap` + app).
 - **FR-009**: La plateforme **MUST** refuser tout lien magique après un premier usage (usage unique) et après 15 minutes d'inactivité.
@@ -180,7 +187,7 @@ Si la plateforme devient injoignable, si une sauvegarde échoue, ou si une erreu
 
 - **Infrastructure** : un serveur hôte suffisamment dimensionné pour héberger la plateforme est déjà provisionné et accessible par le super-admin. Le choix précis du fournisseur est tranché par la constitution et la stack figée du projet, pas par cette spec.
 - **Nom de domaine** : un nom de domaine dédié est disponible ou acquis avant le démarrage des travaux de déploiement. Le choix précis (sous-domaine) est de l'ordre du plan d'implémentation, pas de la spec.
-- **Messagerie sortante** : un service d'envoi d'email transactionnel opérationnel est disponible pour la livraison des liens magiques et des notifications (existant dans les intégrations du projet).
+- **Messagerie sortante** : l'authentification utilisateur est déléguée à **Authentik** (décidé Session 2026-04-22) ; l'envoi des liens magiques est géré par le SMTP déjà configuré dans Authentik — aucun service email supplémentaire à provisionner côté Supabase.
 - **Gestionnaire de secrets** : un gestionnaire de secrets self-hosted est déjà en service pour stocker les secrets de configuration (existant dans les intégrations du projet).
 - **Canal de notification** : le super-admin dispose d'un canal de messagerie (email, messagerie d'équipe) déjà utilisé par le projet pour recevoir les alertes, configurable par l'opérateur.
 - **Compétences opérateur** : le super-admin a accès à un client SQL et aux outils administrateur standards pour vérifier manuellement l'état de la plateforme si nécessaire.
@@ -191,6 +198,6 @@ Si la plateforme devient injoignable, si une sauvegarde échoue, ou si une erreu
 
 - Disponibilité confirmée du serveur hôte et des accès réseau entrants (ports HTTPS, SSH administrateur).
 - Disponibilité confirmée du nom de domaine et droits de configuration DNS.
-- Disponibilité confirmée du service d'email transactionnel avec quota suffisant pour au moins 100 envois par jour en phase initiale.
+- Disponibilité confirmée du serveur **Authentik** (`auth.hma.business`) en état opérationnel, configuré en production (SMTP interne actif, groupes et policies gérables), et du droit d'y créer une application OAuth client pour GoTrue.
 - Disponibilité confirmée du gestionnaire de secrets self-hosted, accessible par le super-admin.
-- Canal de notification (messagerie) déjà actif et connu du super-admin.
+- Canal de notification : **chat Telegram HMA existant** joint par le bot `hmagents_bot` (credential Vaultwarden `Telegram Bot — HMAGENTS`). Le `chat_id` de ce chat est présumé déjà connu ou récupérable depuis l'historique Telegram ; aucun nouveau chat n'est à créer pour cette feature.

@@ -17,9 +17,9 @@ Procédure de rotation des 12 secrets `supabase-selfhost-*` de Vaultwarden.
 | `supabase-selfhost-service-role-key` | trimestrielle (liée JWT) | | |
 | `supabase-selfhost-postgres-password` | annuelle | | |
 | `supabase-selfhost-dashboard-password` | annuelle | | |
-| `supabase-selfhost-smtp-host` | sur changement provider | | |
-| `supabase-selfhost-smtp-user` | annuelle | | |
-| `supabase-selfhost-smtp-pass` | annuelle | | |
+| ~~`supabase-selfhost-smtp-*`~~ | ~~annuelle~~ | N/A — **supprimés /speckit-clarify 2026-04-22** (auth déléguée Authentik) | |
+| `supabase-selfhost-oidc-client-id` | sur recréation app Authentik | | |
+| `supabase-selfhost-oidc-client-secret` | annuelle ou immédiat sur incident | | Rotate via Authentik UI → regenerate secret |
 | `supabase-selfhost-r2-account-id` | fixe (lié au compte CF) | | |
 | `supabase-selfhost-r2-access-key-id` | annuelle | | |
 | `supabase-selfhost-r2-secret-access-key` | annuelle | | |
@@ -85,14 +85,16 @@ Procédure de rotation des 12 secrets `supabase-selfhost-*` de Vaultwarden.
    ```
 7. Tester manuellement `sudo /usr/local/bin/pg-backup.sh` → succès attendu.
 
-## Procédure : rotation SMTP / R2
+## Procédure : rotation OIDC client_secret / R2
 
-### SMTP
+### OIDC client_secret Authentik (remplace SMTP Brevo)
 
-1. Générer une nouvelle clé SMTP dans Brevo.
-2. Mettre à jour `supabase-selfhost-smtp-pass` dans Vaultwarden.
-3. Coolify UI → `GOTRUE_SMTP_PASS` → nouvelle valeur → Restart.
-4. Test : demander un Magic Link, vérifier livraison ≤ 60 s.
+1. Se connecter à Authentik (`https://auth.hma.business`) → **Applications → supabase-hma → Provider** → bouton **"Regenerate client secret"**.
+2. Copier la nouvelle valeur dans un Notepad local (jamais dans le chat).
+3. Mettre à jour `supabase-selfhost-oidc-client-secret` dans Vaultwarden (org `stack_hma`).
+4. Coolify UI → env var `GOTRUE_EXTERNAL_KEYCLOAK_SECRET` → nouvelle valeur → **Restart** app Supabase.
+5. Test : tenter un login → flow OIDC doit aboutir sans erreur de client authentication.
+6. Fermer Notepad sans sauvegarder.
 
 ### R2
 

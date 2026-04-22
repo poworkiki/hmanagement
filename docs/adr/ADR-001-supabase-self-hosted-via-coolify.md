@@ -77,12 +77,18 @@ Le socle data de la plateforme doit fournir :
 **Déployer Supabase via le template Coolify officiel**, avec :
 
 1. **Domaine** : `supabase.hma.business` (DNS-only Cloudflare, TLS Let's Encrypt via Traefik).
-2. **Secrets** : 12 entrées dans Vaultwarden préfixées `supabase-selfhost-*`, injectées manuellement dans Coolify UI à la création (les ✅ marqués "Masked"). Aucun `.env` versionné.
+2. **Secrets** : 11 entrées dans Vaultwarden préfixées `supabase-selfhost-*`, injectées manuellement dans Coolify UI à la création (les ✅ marqués "Masked"). Aucun `.env` versionné.
 3. **Persistance** : volume Docker dédié pour `/var/lib/postgresql/data` (Coolify-managed).
-4. **Sauvegardes** : `pg_dump -Fc` → `restic` → Cloudflare R2 `hma-supabase-backups` (daily, rétention 30 + 12). Drill mensuel automatisé.
-5. **Monitoring** : 4 sondes Uptime Kuma (Studio, Auth, REST, cert TLS) + alertes Telegram + disk-alert sur `/var/lib/docker`.
-6. **SMTP Magic Link** : Brevo plan gratuit, fallback AWS SES Paris.
-7. **GoTrue** : Magic Link + MFA TOTP global obligatoire, rate-limits stricts.
+4. **Sauvegardes** : `pg_dump -Fc` → `restic` → Cloudflare R2 `hma-supabase-backups` (daily, rétention 30 + 12). Drill mensuel automatisé. **Cold storage papier** du `RESTIC_PASSWORD` obligatoire (T023.5 gate).
+5. **Monitoring** : 4 sondes Uptime Kuma (Studio, Auth, REST, cert TLS) + alertes Telegram via **chat HMA existant** + disk-alert sur `/var/lib/docker`.
+6. ~~**SMTP Magic Link** : Brevo plan gratuit, fallback AWS SES Paris.~~ **Superseded** → voir point 6bis.
+7. ~~**GoTrue** : Magic Link + MFA TOTP global obligatoire, rate-limits stricts.~~ **Superseded** → voir point 7bis.
+
+### Amendement /speckit-clarify 2026-04-22
+
+6bis. **Authentification déléguée à Authentik OIDC** (`auth.hma.business`) — aucun SMTP Brevo à provisionner, aucun nouveau compte SaaS externe. GoTrue = OIDC relying party.
+7bis. **GoTrue** : Magic Link natif désactivé (`GOTRUE_EXTERNAL_EMAIL_ENABLED=false`), provider OIDC Keycloak activé (`GOTRUE_EXTERNAL_KEYCLOAK_*`). MFA TOTP obligatoire **enforcé côté Authentik** (groupe `supabase-hma-admins` avec policy MFA). Rate-limits + HIBP reportés côté IdP.
+
 8. **Docker Compose de référence** versionné dans `infra/supabase/coolify-service.yml` (ou équivalent exporté depuis Coolify) — pour disaster recovery uniquement, pas source d'exécution.
 
 ### Ce que cette décision **n'inclut PAS**

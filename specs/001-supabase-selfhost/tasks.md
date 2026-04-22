@@ -59,12 +59,14 @@ description: "Task list for feature 001-supabase-selfhost"
 - [ ] T012 [UI Cloudflare] Générer un jeu d'API R2 à scope **restreint au bucket `hma-supabase-backups`** (Read+Write). Récupérer `Access Key ID`, `Secret Access Key`, `Account ID`.
 - [ ] T013 [UI Vaultwarden] Créer les 3 secrets correspondants : `supabase-selfhost-r2-account-id`, `supabase-selfhost-r2-access-key-id`, `supabase-selfhost-r2-secret-access-key` dans l'org `stack_hma`.
 
-### 2.3 Compte SMTP (Brevo)
+### 2.3 ~~Compte SMTP (Brevo)~~ → **Authentik OIDC (délégation auth)**
 
-- [ ] T014 [UI Brevo] Créer (ou activer) un compte Brevo, valider le domaine `hma.business` (SPF + DKIM dans Cloudflare DNS).
-- [ ] T015 [UI Brevo] Générer une clé SMTP transactionnelle. Récupérer `SMTP host`, `SMTP user`, `SMTP password`.
-- [ ] T016 [UI Cloudflare] Ajouter les enregistrements DKIM/SPF/DMARC indiqués par Brevo dans la zone DNS `hma.business`.
-- [ ] T017 [UI Vaultwarden] Créer les 3 secrets `supabase-selfhost-smtp-host`, `supabase-selfhost-smtp-user`, `supabase-selfhost-smtp-pass`.
+> **Clarification /speckit-clarify 2026-04-22** : T014-T017 supprimés. L'authentification est déléguée à l'IdP Authentik existant (`auth.hma.business`) qui gère déjà son propre SMTP. Remplacés par T014-T017 configuration OIDC ci-dessous.
+
+- [ ] T014 [UI Authentik] Se connecter à `https://auth.hma.business` → **Applications → + Create** → nouvelle app `supabase-hma`. Noter le `client_id` et générer le `client_secret` (usage `GOTRUE_EXTERNAL_KEYCLOAK_SECRET`).
+- [ ] T015 [UI Authentik] Configurer le **Provider OAuth2/OIDC** de l'app : Redirect URI = `https://supabase.hma.business/auth/v1/callback`, scopes = `openid email profile`, JWT signing alg = RS256 (par défaut Authentik).
+- [ ] T016 [UI Authentik] Créer/assigner un **groupe Authentik** `supabase-hma-admins` (ou équivalent) avec **policy MFA TOTP obligatoire** (`is_mfa_enforced`). Inviter au minimum le compte super-admin cible. FR-007 enforcé ici, pas dans GoTrue.
+- [ ] T017 [UI Vaultwarden] Créer les 2 secrets OIDC dans stack_hma : `supabase-selfhost-oidc-client-id` (valeur = client_id Authentik) et `supabase-selfhost-oidc-client-secret` (valeur = client_secret). URL d'Authentik `https://auth.hma.business/application/o/supabase-hma/` est valeur publique (→ `env.reference`).
 
 ### 2.4 Secrets Supabase dans Vaultwarden
 
@@ -74,18 +76,20 @@ description: "Task list for feature 001-supabase-selfhost"
 - [ ] T021 [P] [UI Vaultwarden] Générer et stocker `supabase-selfhost-postgres-password` (≥ 32 chars).
 - [ ] T022 [P] [UI Vaultwarden] Générer et stocker `supabase-selfhost-dashboard-password` (≥ 24 chars).
 - [ ] T023 [P] [UI Vaultwarden] Générer et stocker `supabase-selfhost-restic-password` (≥ 40 chars, sauvegardée aussi hors Vaultwarden pour disaster recovery — cf. runbook).
+- [ ] T023.5 🔴 [GATE] [UI Vaultwarden + action physique] **Cold storage `supabase-selfhost-restic-password`** — récupérer la valeur via Vaultwarden UI, la recopier sur **papier** dans un coffre physique (≥ 1 copie) et conserver une **2e copie** chez un tiers de confiance (notaire, proche). Couverture : FR-015 + ADR-001 §conséquences. **BLOQUE T076** : aucun backup production ne doit démarrer sans que la clé de chiffrement ait sa copie cold storage (sinon perte Vaultwarden + PG simultanée = backups illisibles).
 
-### 2.5 Canal Telegram
+### 2.5 ~~Canal Telegram (création nouveau chat)~~ → **Réutilisation chat existant**
 
-- [ ] T024 [UI Telegram] Créer le chat/groupe ops "HMA Supabase Ops" et inviter le bot `hmagents_bot`. Récupérer le `chat_id` (via `https://api.telegram.org/bot<TOKEN>/getUpdates`).
-- [ ] T025 [UI Vaultwarden] Stocker le `chat_id` dans le champ notes du secret existant `Telegram Bot — HMAGENTS` **ou** créer un nouveau secret `supabase-selfhost-telegram-chat-id-ops`.
+> **Clarification /speckit-clarify 2026-04-22** : T024 supprimée (pas de nouveau chat), T025 simplifiée en récupération du chat_id du canal Telegram HMA existant dans lequel `hmagents_bot` envoie déjà les notifications (n8n, Authentik).
+
+- [ ] T025 [UI Vaultwarden] Récupérer le `chat_id` du chat Telegram HMA existant (source possibles : notes du secret `Telegram Bot — HMAGENTS` si déjà renseigné, sinon via `https://api.telegram.org/bot<TOKEN>/getUpdates` exécuté une fois après envoi d'un message quelconque au bot). Stocker dans un nouveau secret `supabase-selfhost-telegram-chat-id`. Préfixes `[supabase-backup]` / `[restore-drill]` / `[disk-alert]` dans les scripts évitent la confusion avec les autres sources.
 
 ### 2.6 Reference de configuration versionnée (publique)
 
 - [ ] T026 Créer `infra/supabase/env.reference` avec **uniquement** les variables 📄 (publiques) de `contracts/platform-env-contract.md` (domain, TTLs, rate-limits, etc.) — aucune valeur secrète. Utilisateur final injectera les ✅ via Coolify UI.
-- [ ] T027 Créer `infra/supabase/gotrue-config-overrides.yml` documentant les overrides GoTrue décidés dans `research.md` R-007 : MFA, HIBP, disable signup, `JWT_EXP=3600`, **`OTP_EXP=900` (FR-009 Magic Link 15 min)**, rate-limits `EMAIL_SENT=10` + **`VERIFY=30`** + **`TOKEN_REFRESH=150`** (FR-013 brute-force). Source de vérité pour Coolify UI. Vérifier les noms exacts des variables contre la version GoTrue livrée par le template Supabase Coolify (cf. note de `contracts/platform-env-contract.md` §3).
+- [ ] T027 Créer `infra/supabase/gotrue-config-overrides.yml` documentant les overrides GoTrue décidés dans `research.md` R-007 + R-011 : `DISABLE_SIGNUP=true`, `MAILER_AUTOCONFIRM=false`, `JWT_EXP=3600`, `EXTERNAL_EMAIL_ENABLED=false` (on désactive Magic Link natif car auth passe par OIDC), **`EXTERNAL_KEYCLOAK_ENABLED=true`** (Authentik compatible), `EXTERNAL_KEYCLOAK_URL=https://auth.hma.business/application/o/supabase-hma/`, `EXTERNAL_KEYCLOAK_REDIRECT_URI=https://supabase.hma.business/auth/v1/callback`, `SITE_URL`. Rate-limits sont reportés vers Authentik (policies dédiées) — la surface GoTrue exposée devient minimale. Vérifier les noms exacts côté version GoTrue du template Coolify (alias possible : `EXTERNAL_CUSTOM_*` selon version).
 
-**Checkpoint Phase 2** : DNS résout, bucket R2 prêt, 12 secrets Vaultwarden en place, SMTP configuré, canal Telegram joint. **Les 5 user stories peuvent démarrer en parallèle à partir d'ici** (capacité équipe ≥ 2).
+**Checkpoint Phase 2** : DNS résout, bucket R2 prêt, 11 secrets Vaultwarden en place (9 Supabase-direct + 2 OIDC Authentik), chat Telegram existant identifié, app OAuth Authentik créée. **Les 5 user stories peuvent démarrer en parallèle à partir d'ici** (capacité équipe ≥ 2).
 
 ---
 
@@ -114,23 +118,23 @@ description: "Task list for feature 001-supabase-selfhost"
 
 ## Phase 4: User Story 2 — Authentification Magic Link + MFA TOTP (Priority: P1)
 
-**Goal** : permettre au super-admin de s'authentifier avec Magic Link et d'activer MFA TOTP obligatoire.
+**Goal** : permettre au super-admin de s'authentifier via **Authentik OIDC** (Magic Link Authentik + MFA TOTP obligatoire enforcé côté IdP). Supabase GoTrue agit comme OIDC relying party.
 
-**Independent Test** : un compte test reçoit un Magic Link, le clique, configure TOTP, et complète une session. La session expire bien après 1 h d'inactivité (admin).
+**Independent Test** : un compte test invité dans Authentik + groupe MFA clique "Sign in with Authentik" sur Supabase Studio → redirection → login Magic Link Authentik → challenge TOTP → retour Supabase avec session JWT valide.
 
 ### Implementation for User Story 2
 
-- [ ] T050 [US2] Coolify UI → Env vars `supabase-hma` → vérifier que les overrides GoTrue de `infra/supabase/gotrue-config-overrides.yml` sont tous appliqués (`GOTRUE_MFA_ENABLED=true`, `GOTRUE_DISABLE_SIGNUP=true`, `GOTRUE_SECURITY_PASSWORDS_HIBP_ENABLED=true`, `GOTRUE_MAILER_AUTOCONFIRM=false`, `GOTRUE_JWT_EXP=3600`, `GOTRUE_OTP_EXP=900`, `GOTRUE_RATE_LIMIT_EMAIL_SENT=10`, `GOTRUE_RATE_LIMIT_VERIFY=30`, `GOTRUE_RATE_LIMIT_TOKEN_REFRESH=150`). Ajuster les noms exacts si la version GoTrue diffère (ex. `GOTRUE_MAILER_OTP_EXP`).
-- [ ] T051 [US2] Coolify UI → onglet **Restart** de l'app `supabase-hma` pour que les overrides prennent effet.
-- [ ] T052 [US2] Supabase Studio → **Authentication → Users → Invite user** → inviter `poworkiki@gmail.com` (compte super-admin cible).
-- [ ] T053 [US2] Depuis Gmail : cliquer sur le Magic Link reçu. Vérifier en temps réel que le mail arrive en < 60 s (User Story 2 scenario 1).
-- [ ] T054 [US2] Dans le parcours GoTrue : scanner le QR code TOTP avec une app auth, saisir le premier code à 6 chiffres. Vérifier que la session est active.
-- [ ] T055 [P] [US2] [VALID] (User Story 2 scenario 3) Se déconnecter, refaire un login : confirmer que TOTP **et** Magic Link sont tous deux requis pour compléter la session.
-- [ ] T056 [P] [US2] [VALID] (User Story 2 scenario 4) Laisser la session admin inactive 60 min. Tenter une action → redirection login attendue.
-- [ ] T057 [P] [US2] [VALID] (User Story 2 scenario 5) Récupérer un Magic Link, le cliquer une première fois (ok), retenter le même lien → refus avec message clair.
-- [ ] T058 [P] [US2] [VALID] (SC-002) Chronométrer l'activation d'un **second** compte admin MFA de bout en bout en suivant uniquement `docs/runbooks/supabase-deploy.md` : cible < 5 min.
+- [ ] T050 [US2] Coolify UI → Env vars `supabase-hma` → injecter les overrides OIDC : `GOTRUE_EXTERNAL_EMAIL_ENABLED=false` (désactive Magic Link natif), `GOTRUE_EXTERNAL_KEYCLOAK_ENABLED=true`, `GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID` (depuis `supabase-selfhost-oidc-client-id` Vaultwarden), `GOTRUE_EXTERNAL_KEYCLOAK_SECRET` (depuis `supabase-selfhost-oidc-client-secret`), `GOTRUE_EXTERNAL_KEYCLOAK_URL=https://auth.hma.business/application/o/supabase-hma/`, `GOTRUE_EXTERNAL_KEYCLOAK_REDIRECT_URI=https://supabase.hma.business/auth/v1/callback`. Conserver `GOTRUE_DISABLE_SIGNUP=true`, `GOTRUE_JWT_EXP=3600`. **Vérifier les noms exacts** contre la version GoTrue livrée (alias possible : `GOTRUE_EXTERNAL_CUSTOM_*` selon version, config via JSON si GoTrue v2.170+).
+- [ ] T051 [US2] Coolify UI → onglet **Restart** de l'app `supabase-hma` pour que les env vars OIDC prennent effet. Vérifier les logs `gotrue` : pas d'erreur de discovery OIDC (`GET /.well-known/openid-configuration` sur Authentik doit réussir).
+- [ ] T052 [US2] Côté Authentik (`auth.hma.business`) : ajouter le compte cible (`poworkiki@gmail.com`) au groupe `supabase-hma-admins` (créé en T016). Envoyer/valider l'invitation Authentik → 1er login Authentik + setup TOTP si jamais fait avant.
+- [ ] T053 [US2] Sur `https://supabase.hma.business/` → Supabase Studio login → bouton **"Sign in with Keycloak"** (ou équivalent selon l'UI Studio) → redirection `auth.hma.business`. Authentik envoie le Magic Link à l'email → clic → retour Authentik → challenge TOTP → retour Supabase Studio authentifié.
+- [ ] T054 [US2] [VALID] (FR-007) Vérifier dans les claims JWT retourné par Supabase (via DevTools navigateur) la présence d'un attribut attestant MFA (ex. `amr: ["mfa"]` ou claim Authentik équivalent). Cohérence avec l'enforcement côté groupe Authentik.
+- [ ] T055 [P] [US2] [VALID] (FR-008, User Story 2 scenario 4) Laisser la session admin inactive 60 min (cap `GOTRUE_JWT_EXP=3600`). Tenter une action → redirection login Authentik attendue.
+- [ ] T056 [P] [US2] [VALID] (FR-009) Authentik UI → vérifier que le TTL du Magic Link Authentik est configuré à ≤ 15 minutes. Tester un lien expiré → refus.
+- [ ] T057 [P] [US2] [VALID] Retirer le compte du groupe `supabase-hma-admins` sur Authentik → tenter nouveau login → refus/logout immédiat. Valide que la révocation est bien enforcée côté IdP.
+- [ ] T058 [P] [US2] [VALID] (SC-002) Chronométrer l'activation d'un **second** compte admin end-to-end (ajout groupe Authentik → 1er login → MFA setup → session Supabase valide) en suivant uniquement `docs/runbooks/supabase-deploy.md` : cible < 5 min.
 
-**Checkpoint US2** : le super-admin est authentifié avec MFA. L'authentification est production-ready.
+**Checkpoint US2** : le super-admin est authentifié via Authentik OIDC avec MFA TOTP enforcé côté IdP. L'authentification est production-ready et centralise avec le reste du stack HMA.
 
 ---
 

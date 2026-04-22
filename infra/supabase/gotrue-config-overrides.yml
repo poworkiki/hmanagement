@@ -7,81 +7,74 @@
 #  (a) documenter les décisions, (b) auditer la config courante,
 #  (c) reconstruire la config en cas de réinstallation.
 #
-#  Décisions : research.md R-007 + remédiation /speckit-analyze (G1, G2, U1)
+#  Décisions : research.md R-007 + R-011 (Authentik OIDC délégation,
+#  /speckit-clarify 2026-04-22) + remédiation /speckit-analyze (G1, G2, U1)
 # =============================================================================
 
-version: "1"
+version: "2"
 service: supabase-hma/auth
 source_of_truth: coolify_ui
+auth_strategy: "delegated_oidc"
+idp: "authentik (auth.hma.business)"
 gotrue_version_check: "verify exact env var names against GoTrue version shipped by Coolify Supabase template at deploy time"
 
 # -----------------------------------------------------------------------------
-# Authentification
+# Authentification — délégation à Authentik via OIDC
 # -----------------------------------------------------------------------------
 auth:
   site_url:              "https://supabase.hma.business"
   api_external_url:      "https://supabase.hma.business/auth/v1"
-  disable_signup:        true                   # FR-006 : pas d'auto-inscription
-  mailer_autoconfirm:    false                  # FR-006 : Magic Link explicite
+  disable_signup:        true                   # pas d'auto-inscription
   jwt_exp_seconds:       3600                   # FR-008 : cap 1h (MVP = admin only)
-  otp_exp_seconds:       900                    # FR-009 : Magic Link expire en 15 min
-  password_require_reauth: true                 # sécurité changement de mot de passe
+  external_email_enabled: false                 # désactive Magic Link natif (Authentik prend le relais)
+  mailer_autoconfirm:    false                  # inchangé (garde-fou)
 
 # -----------------------------------------------------------------------------
-# MFA (FR-007)
+# OIDC — provider Authentik (compatible Keycloak)
+# -----------------------------------------------------------------------------
+oidc:
+  provider:              "keycloak"             # Authentik exposé comme keycloak
+  provider_alias_note:   "GoTrue v2.170+ peut utiliser `custom` au lieu de `keycloak` pour les OIDC génériques. Tester au déploiement."
+  enabled_env_var:       "GOTRUE_EXTERNAL_KEYCLOAK_ENABLED=true"
+  url:                   "https://auth.hma.business/application/o/supabase-hma/"
+  redirect_uri:          "https://supabase.hma.business/auth/v1/callback"
+  client_id_secret_id:   "supabase-selfhost-oidc-client-id"     # Vaultwarden
+  client_secret_id:      "supabase-selfhost-oidc-client-secret" # Vaultwarden
+  scopes:                ["openid", "email", "profile"]
+  rotation_policy:       "client_secret annuel ou immédiat si suspecté compromis"
+
+# -----------------------------------------------------------------------------
+# MFA (FR-007) — enforcé côté IdP Authentik
 # -----------------------------------------------------------------------------
 mfa:
-  enabled_globally: true
+  enforced_at: "authentik"
+  mechanism:  "group + policy Authentik — `supabase-hma-admins` avec MFA TOTP obligatoire"
+  claim_check: "JWT Authentik contient claim attestant MFA (ex. `amr: ['mfa']`)"
   notes:
-    - "MFA activé globalement dès v2.170+ via GOTRUE_MFA_ENABLED=true."
-    - "La contrainte 'obligatoire pour super_admin/admin' s'applique via
-       policy applicative (middleware app), GoTrue ne supporte pas de
-       MFA conditionnel par rôle en natif."
-    - "Fallback MVP : obliger TOUS les utilisateurs à activer TOTP au
-       premier login — cohérent car MVP = que des admins."
+    - "Plus besoin de GOTRUE_MFA_ENABLED — GoTrue accepte le token OIDC validé par Authentik."
+    - "Révocation = retrait du groupe Authentik → next JWT refresh bloqué."
 
 # -----------------------------------------------------------------------------
-# Sécurité mots de passe (FR-010)
+# Sécurité & rate-limits — reporté côté Authentik
 # -----------------------------------------------------------------------------
-passwords:
-  hibp_enabled: true                            # Have I Been Pwned check
-
-# -----------------------------------------------------------------------------
-# Rate limiting (FR-013)
-# -----------------------------------------------------------------------------
-rate_limits:
-  email_sent_per_hour_per_ip:          10       # émission Magic Link
-  verify_per_hour_per_ip:              30       # vérification Magic Link / OTP
-  token_refresh_per_hour_per_ip:       150      # refresh JWT
-  sso_per_hour_per_ip:                 30       # reservé usage futur
-  rate_limit_header:                   "X-Real-IP"
-  manual_linking_enabled:              false
-
-# -----------------------------------------------------------------------------
-# SMTP (FR-006, livraison Magic Link)
-# -----------------------------------------------------------------------------
-smtp:
-  # valeurs publiques (versionnées)
-  port:              587
-  sender_email:      "no-reply@hma.business"
-  sender_name:       "hmanagement"
-  # valeurs secrètes (Vaultwarden)
-  host_secret_id:    "supabase-selfhost-smtp-host"
-  user_secret_id:    "supabase-selfhost-smtp-user"
-  password_secret_id: "supabase-selfhost-smtp-pass"
-  provider:          "brevo"
-  notes:
-    - "Fallback : SES Paris eu-west-3 si Brevo tombe / quota dépassé."
-    - "Domaine hma.business doit passer SPF + DKIM + DMARC (T016)."
+security_policies_location: "authentik"
+notes_security:
+  - "FR-010 HIBP : policy Authentik (Password Policy → HIBP lookup)."
+  - "FR-013 rate-limit login : policy Authentik (Rate-Limit Stage sur login flow)."
+  - "FR-009 TTL Magic Link 15 min : setting Authentik (Token Validity → Invitations/Email)."
 
 # -----------------------------------------------------------------------------
 # Sessions (FR-008)
 # -----------------------------------------------------------------------------
 sessions:
-  admin_max_seconds:   3600                     # 1h strict, appliqué GoTrue
-  user_max_seconds:    28800                    # 8h (enforcement app-level)
+  admin_max_seconds:   3600                     # 1h strict, appliqué GoTrue JWT_EXP
+  user_max_seconds:    28800                    # 8h (enforcement app-level futur)
+  authentik_session_cookie_note: |
+    Le cookie de session Authentik a son propre TTL (par défaut très long).
+    Pour durcir côté IdP, configurer "Session Stage duration" dans Authentik
+    à une valeur cohérente (≤ 8h) pour éviter un SSO silencieux indéfini.
   mvp_scope_note: |
-    En MVP, seuls des comptes admin existent → GOTRUE_JWT_EXP=3600
-    applique uniformément 1h. La différenciation 8h user sera appliquée
-    par le middleware applicatif dès l'introduction des rôles non-admin
+    En MVP, seuls des comptes admin existent → GOTRUE_JWT_EXP=3600 applique
+    uniformément 1h. La différenciation 8h user sera appliquée par le
+    middleware applicatif dès l'introduction des rôles non-admin
     (feature 002-schemas-rls-bootstrap + feature app).

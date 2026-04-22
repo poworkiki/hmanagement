@@ -8,17 +8,17 @@
 Déployer une instance **Supabase self-hosted** (PostgreSQL + GoTrue + PostgREST + Supabase Studio + optionnellement Realtime & Storage) sur le VPS Hostinger `187.124.150.82` via **Coolify** (`https://coolify.hma.business`), exposée en HTTPS sur `supabase.hma.business` via Traefik (TLS Let's Encrypt automatique), avec :
 
 - secrets centralisés dans **Vaultwarden** (`stack_hma`) et injectés dans Coolify comme variables d'environnement d'application,
-- authentification **Magic Link + MFA TOTP obligatoire** pour `super_admin` / `admin`,
+- authentification **déléguée à Authentik** (`auth.hma.business`) via **OIDC** — GoTrue configuré comme relying party, Magic Link + MFA TOTP enforcés côté IdP (décision /speckit-clarify 2026-04-22),
 - sauvegardes PostgreSQL quotidiennes chiffrées vers **Cloudflare R2**, rétention 30 jours, test de restauration mensuel,
 - monitoring disponibilité via **Uptime Kuma** existant (`status.hma.business`) + sondes applicatives Coolify,
-- notifications opérationnelles via **Telegram (`hmagents_bot`)** et fallback email (`hmagestion@gmail.com`).
+- notifications opérationnelles via **chat Telegram HMA existant** (`hmagents_bot`, mutualisé avec n8n/Authentik) et fallback email (`hmagestion@gmail.com`).
 
 **Objectif North Star** : socle opérationnel au jour J+10 (cible MVP), zéro dépendance SaaS non-souveraine, zéro secret en clair dans le repo ou les logs.
 
 ## Technical Context
 
 **Language/Version** : aucun code applicatif propre à cette feature. Artefacts produits = configuration Coolify + scripts shell (bash) + fichiers YAML pour probes et backups.
-**Primary Dependencies** : Supabase stable `2025.x` (images officielles `supabase/postgres`, `supabase/gotrue`, `supabase/postgrest`, `supabase/studio`, `supabase/kong` ou Traefik reverse-proxy), Coolify ≥ v4, Traefik (livré par Coolify), `pg_dump` / `pg_restore` (PostgreSQL 15 client), `restic` 0.17+ pour backups chiffrés, `rclone` (optionnel) pour synchronisation vers R2.
+**Primary Dependencies** : Supabase stable `2025.x` (images officielles `supabase/postgres`, `supabase/gotrue`, `supabase/postgrest`, `supabase/studio`, `supabase/kong` ou Traefik reverse-proxy), Coolify ≥ v4, Traefik (livré par Coolify), **Authentik IdP** déjà déployé (`auth.hma.business` — pré-requis opérationnel, pas installé par cette feature), `pg_dump` / `pg_restore` (PostgreSQL 15 client), `restic` 0.17+ pour backups chiffrés, `rclone` (optionnel) pour synchronisation vers R2.
 **Storage** : PostgreSQL 15 (volume Docker persistant sur VPS Hostinger). Backups : Cloudflare R2 bucket `hma-supabase-backups` (chiffrement restic).
 **Testing** : shell scripts de smoke-test + tests manuels de restauration (mensuel). Tests fonctionnels de l'app consommatrice hors scope (viennent avec les features suivantes).
 **Target Platform** : Ubuntu 24.04 LTS sur VPS Hostinger 187.124.150.82, Docker via Coolify, Cloudflare pour DNS + CDN.
@@ -46,7 +46,7 @@ Déployer une instance **Supabase self-hosted** (PostgreSQL + GoTrue + PostgREST
 | Art. 3.4 — Stack figée | Supabase self-hosted obligatoire | ✅ | Aucune déviation |
 | Art. 4.1 — Moindre privilège | Rôles DB applicatifs sans `BYPASSRLS` | ✅ (préparé) | Création du rôle applicatif renvoyée à la feature suivante, mais préparée (voir Assumptions plan) |
 | Art. 4.2 — RLS | RLS sur `marts.*` et `app.*` | N/A ici | Pas de schéma applicatif dans cette feature |
-| Art. 4.3 — Auth forte | Magic Link + MFA TOTP obligatoire admin | ✅ | GoTrue configuré avec TOTP obligatoire post-premier-login via politique d'équipe |
+| Art. 4.3 — Auth forte | Magic Link + MFA TOTP obligatoire admin | ✅ | **Enforcé côté Authentik** (groupe `supabase-hma-admins` + policy MFA obligatoire). GoTrue accepte uniquement les JWT Authentik validés. Décision /speckit-clarify 2026-04-22. |
 | Art. 4.4 — Audit trail | Actions sensibles tracées | ✅ (préparé) | Logs GoTrue → journal événements auth ; table `app.audit_log` viendra avec la feature suivante |
 | Art. 4.5 — Secrets | Jamais en clair dans le code | ✅ | Tous les secrets dans Vaultwarden, injectés via Coolify env UI |
 | Art. 10.1 — Pipeline notifié | Notifications fin de job | ✅ | Cron backup → webhook Telegram bot `hmagents_bot` |

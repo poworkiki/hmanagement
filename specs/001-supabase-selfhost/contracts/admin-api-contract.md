@@ -18,16 +18,19 @@
 | Consommateurs autorisés | Super-admin HMA depuis navigateur |
 | Acceptance | Charge en < 3 s depuis FAI standard EU (SC-001) |
 
-### 1.2 GoTrue — Authentification
+### 1.2 GoTrue — Authentification (déléguée OIDC Authentik)
+
+> Décision /speckit-clarify 2026-04-22 : auth déléguée à Authentik. Les endpoints Magic Link natifs (`/magiclink`, `/verify`) sont désactivés (`GOTRUE_EXTERNAL_EMAIL_ENABLED=false`).
 
 | Propriété | Valeur |
 |---|---|
 | Base URL | `https://supabase.hma.business/auth/v1/` |
 | Protocole | HTTPS |
-| Authentification | Aucune pour `POST /magiclink`, `POST /otp`. JWT ensuite. |
-| Endpoints critiques | `POST /magiclink`, `POST /verify`, `GET /user`, `POST /factors` (enrollment MFA), `POST /factors/{id}/verify`, `POST /logout` |
-| Rate-limit Magic Link | 10/h/IP (`GOTRUE_RATE_LIMIT_EMAIL_SENT`) |
-| Acceptance | Envoi Magic Link observé en < 60 s bout en bout (User Story 2 scenario 1) |
+| Authentification | Redirect OIDC vers Authentik, puis JWT |
+| Endpoints critiques | `GET /authorize?provider=keycloak` (déclenche flow OIDC), `GET /callback` (retour IdP, échange code → JWT), `GET /user`, `POST /logout`, `POST /token?grant_type=refresh_token` (refresh JWT) |
+| Flow utilisateur | Studio → clic "Sign in with Keycloak" → redirect `auth.hma.business` → Magic Link Authentik → TOTP (enforcé par groupe Authentik) → retour `supabase.hma.business/auth/v1/callback` → session JWT valide |
+| Rate-limit & HIBP | **Enforcés côté Authentik** (policies dédiées sur le login flow) — pas côté GoTrue |
+| Acceptance | User Story 2 : round-trip OIDC complet (click → redirect → Magic Link email ≤ 60 s → TOTP → callback) < 2 min |
 
 ### 1.3 PostgREST — API REST auto
 

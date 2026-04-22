@@ -42,20 +42,17 @@ Synthèse des décisions techniques prises pour permettre l'exécution de la fea
 
 ---
 
-## R-003 — Provider SMTP transactionnel pour Magic Link et notifications
+## R-003 — ~~Provider SMTP transactionnel~~ **SUPERSEDED par R-011** (/speckit-clarify 2026-04-22)
 
-**Decision** : **Brevo (ex-Sendinblue)** plan gratuit (300 emails/jour) en démarrage, avec migration planifiée vers **Amazon SES `eu-west-3` (Paris)** si volume ou délivrabilité le justifient. Configurer Brevo en SMTP authentifié dans les variables GoTrue (`GOTRUE_SMTP_HOST`, `GOTRUE_SMTP_USER`, etc.). Secret stocké dans Vaultwarden.
+> **Status** : **Superseded**. La décision initiale (Brevo comme SMTP pour Magic Link natif GoTrue) a été remplacée par la délégation complète de l'auth à Authentik (voir R-011). Aucun compte SMTP externe n'est nécessaire pour cette feature — Authentik utilise son propre SMTP déjà configuré.
+>
+> Le contenu ci-dessous est conservé pour traçabilité historique. Ne PAS l'exécuter.
 
-**Rationale** :
-- **Brevo** : siège européen (RGPD) → souveraineté OK, quota gratuit suffisant pour 3 à 10 utilisateurs qui se connectent quelques fois par jour (FR-006).
-- **SES Paris** : reste fournisseur AWS mais datacenter et clauses CPE Européens → acceptable après évaluation cas par cas.
-- Gmail SMTP explicitement **rejeté** pour transactionnel (rate limits quotidiens, risque d'avoir le compte bloqué, aucun SLA).
+~~**Decision** : Brevo (ex-Sendinblue) plan gratuit…~~
 
-**Alternatives considered** :
-- *Mailgun / SendGrid* : SaaS US → incompatible Art. 2.
-- *Resend* : US-based, jeune, CPE moins clair.
-- *Postfix self-hosted* : rejeté — délivrabilité chroniquement défaillante en sortie VPS sans réputation IP, coûts de maintenance élevés, YAGNI MVP.
-- *OVH Mail Transactionnel* : n'existe pas en offre transactionnelle dédiée suffisamment mature.
+~~**Rationale** : siège européen RGPD, quota gratuit suffisant…~~
+
+~~**Alternatives considered** : Mailgun/SendGrid US rejetés, Postfix self-hosted rejeté pour délivrabilité.~~
 
 ---
 
@@ -148,7 +145,7 @@ Synthèse des décisions techniques prises pour permettre l'exécution de la fea
 - **FR-008 note scope MVP** : seuls des comptes administrateur existent au MVP (cap 1 h uniforme via `GOTRUE_JWT_EXP=3600`). La différenciation session 8 h pour utilisateurs non-admin sera enforcée par le middleware applicatif dès l'introduction des rôles `controleur` / `consultant` dans la feature suivante `002-schemas-rls-bootstrap` ou la feature app.
 
 **Alternatives considered** :
-- *Intégration Authentik (SSO) comme IdP OIDC de GoTrue* : **reporté V2**. Authentik est déjà déployé (`auth.hma.business`) mais l'intégration OIDC demande un paramétrage non trivial et la spec MVP n'exige pas du SSO. À reconsidérer quand on ouvrira hmanagement en multi-tenant SaaS.
+- ~~*Intégration Authentik (SSO) comme IdP OIDC de GoTrue* : reporté V2~~ → **RETENU finalement** (voir R-011). L'ouverture multi-tenant SaaS n'est plus le trigger ; la décision est prise dès le MVP suite à /speckit-clarify 2026-04-22, car (a) élimine la création d'un compte Brevo (Art. 2 souveraineté renforcée), (b) centralise l'auth avec le reste du stack HMA (n8n, Authentik lui-même), (c) évite la duplication des mécanismes Magic Link + MFA entre GoTrue et Authentik.
 - *Auth par mot de passe + MFA* : rejeté — la spec impose Magic Link (FR-006).
 - *Passkeys (WebAuthn)* : intéressant mais encore expérimental côté GoTrue, reporté V2.
 
@@ -219,6 +216,38 @@ Déclenché par cron le 1er de chaque mois à 05h00 VPS.
 | 8 | Prometheus/Grafana MVP | Reporté (YAGNI) |
 | 9 | Rotation secrets | JWT trimestriel, SMTP/R2 annuel |
 | 10 | SSO Authentik | Reporté V2 |
+
+---
+
+## R-011 — Délégation OIDC à Authentik (remplace R-003 + amende R-007)
+
+**Added** : 2026-04-22 via `/speckit-clarify` (Session 2026-04-22, question 1). Supersede R-003.
+
+**Decision** : GoTrue (Supabase) est configuré comme **OIDC relying party** de l'IdP self-hosted Authentik déjà déployé (`https://auth.hma.business`). Toute la logique d'authentification utilisateur (Magic Link, MFA TOTP, sessions, rate-limits, HIBP) est enforcée côté Authentik. GoTrue désactive son Magic Link natif (`GOTRUE_EXTERNAL_EMAIL_ENABLED=false`) et accepte uniquement les tokens OIDC validés par Authentik.
+
+**Config concrète** :
+- Côté **Authentik** : créer une Application OAuth2/OIDC `supabase-hma`, provider avec redirect URI `https://supabase.hma.business/auth/v1/callback`, groupe `supabase-hma-admins` avec policy MFA TOTP obligatoire.
+- Côté **GoTrue** : injecter `GOTRUE_EXTERNAL_KEYCLOAK_ENABLED=true`, `GOTRUE_EXTERNAL_KEYCLOAK_URL=https://auth.hma.business/application/o/supabase-hma/`, `GOTRUE_EXTERNAL_KEYCLOAK_REDIRECT_URI`, `GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID` (Vaultwarden), `GOTRUE_EXTERNAL_KEYCLOAK_SECRET` (Vaultwarden).
+- Côté **Vaultwarden** : 2 nouveaux secrets `supabase-selfhost-oidc-client-id` et `supabase-selfhost-oidc-client-secret`.
+
+**Rationale** :
+- **Élimine la création d'un compte Brevo** (et toute la config SPF/DKIM/DMARC qui va avec).
+- **Souveraineté renforcée** : 1 dépendance SaaS externe en moins (Art. 2).
+- **Centralisation auth** : un seul point de gestion des utilisateurs pour tout le stack HMA (n8n, Authentik, Supabase, futures apps). Aligné avec l'esprit V2 multi-tenant : quand un nouveau tenant arrive, il a son propre groupe Authentik, scoping naturel.
+- **Réutilise la confiance opérationnelle** : Authentik tourne déjà en production, son SMTP est éprouvé, pas de nouveau canal à valider.
+- **Enforcement MFA plus propre** : policy Authentik par groupe = plus simple et plus auditable que policy applicative custom.
+
+**Alternatives considered** :
+- *Magic Link natif GoTrue + SMTP Brevo* (décision précédente R-003) : rejeté à /speckit-clarify — friction compte Brevo, duplication mécanismes auth entre 2 briques HMA.
+- *Password + TOTP sans Magic Link, sans OIDC* : viable (zéro SMTP) mais perd le bénéfice SSO avec le reste du stack et UX moins bonne.
+- *Cloudflare Access devant Supabase* : léger mais SaaS US, compromis sur souveraineté, OTP limité à 50 users free tier.
+
+**Conséquences à traquer** :
+- Dépendance opérationnelle dure à Authentik : si Authentik down, login Supabase KO. Mitigation : Authentik tourne sur Coolify avec les mêmes garanties ops que Supabase, pas d'aggravation nette.
+- Complexité accrue du runbook deploy : +1 étape de création app OAuth côté Authentik (5-10 min).
+- Impact tasks.md : T014-T017 Brevo remplacés par T014-T017 Authentik OAuth setup. T050-T058 (US2) reformulés pour flow OIDC.
+
+**Variables rendues inutiles côté GoTrue** : `GOTRUE_SMTP_*`, `GOTRUE_OTP_EXP`, `GOTRUE_MFA_ENABLED`, `GOTRUE_SECURITY_PASSWORDS_HIBP_ENABLED`, `GOTRUE_RATE_LIMIT_EMAIL_SENT`, `GOTRUE_RATE_LIMIT_VERIFY`, `GOTRUE_RATE_LIMIT_TOKEN_REFRESH`. Leur équivalent fonctionnel vit côté Authentik (Password Policies, Rate-Limit Stages, Token validity).
 
 ---
 
