@@ -1,0 +1,87 @@
+# =============================================================================
+#  gotrue-config-overrides.yml
+#  Overrides GoTrue pour l'instance Supabase self-hosted hmanagement.
+#
+#  ⚠️ Ce fichier est DESCRIPTIF. La source de vérité d'exécution est
+#  Coolify UI → Env vars de l'app `supabase-hma`. Ce YAML permet de
+#  (a) documenter les décisions, (b) auditer la config courante,
+#  (c) reconstruire la config en cas de réinstallation.
+#
+#  Décisions : research.md R-007 + remédiation /speckit-analyze (G1, G2, U1)
+# =============================================================================
+
+version: "1"
+service: supabase-hma/auth
+source_of_truth: coolify_ui
+gotrue_version_check: "verify exact env var names against GoTrue version shipped by Coolify Supabase template at deploy time"
+
+# -----------------------------------------------------------------------------
+# Authentification
+# -----------------------------------------------------------------------------
+auth:
+  site_url:              "https://supabase.hma.business"
+  api_external_url:      "https://supabase.hma.business/auth/v1"
+  disable_signup:        true                   # FR-006 : pas d'auto-inscription
+  mailer_autoconfirm:    false                  # FR-006 : Magic Link explicite
+  jwt_exp_seconds:       3600                   # FR-008 : cap 1h (MVP = admin only)
+  otp_exp_seconds:       900                    # FR-009 : Magic Link expire en 15 min
+  password_require_reauth: true                 # sécurité changement de mot de passe
+
+# -----------------------------------------------------------------------------
+# MFA (FR-007)
+# -----------------------------------------------------------------------------
+mfa:
+  enabled_globally: true
+  notes:
+    - "MFA activé globalement dès v2.170+ via GOTRUE_MFA_ENABLED=true."
+    - "La contrainte 'obligatoire pour super_admin/admin' s'applique via
+       policy applicative (middleware app), GoTrue ne supporte pas de
+       MFA conditionnel par rôle en natif."
+    - "Fallback MVP : obliger TOUS les utilisateurs à activer TOTP au
+       premier login — cohérent car MVP = que des admins."
+
+# -----------------------------------------------------------------------------
+# Sécurité mots de passe (FR-010)
+# -----------------------------------------------------------------------------
+passwords:
+  hibp_enabled: true                            # Have I Been Pwned check
+
+# -----------------------------------------------------------------------------
+# Rate limiting (FR-013)
+# -----------------------------------------------------------------------------
+rate_limits:
+  email_sent_per_hour_per_ip:          10       # émission Magic Link
+  verify_per_hour_per_ip:              30       # vérification Magic Link / OTP
+  token_refresh_per_hour_per_ip:       150      # refresh JWT
+  sso_per_hour_per_ip:                 30       # reservé usage futur
+  rate_limit_header:                   "X-Real-IP"
+  manual_linking_enabled:              false
+
+# -----------------------------------------------------------------------------
+# SMTP (FR-006, livraison Magic Link)
+# -----------------------------------------------------------------------------
+smtp:
+  # valeurs publiques (versionnées)
+  port:              587
+  sender_email:      "no-reply@hma.business"
+  sender_name:       "hmanagement"
+  # valeurs secrètes (Vaultwarden)
+  host_secret_id:    "supabase-selfhost-smtp-host"
+  user_secret_id:    "supabase-selfhost-smtp-user"
+  password_secret_id: "supabase-selfhost-smtp-pass"
+  provider:          "brevo"
+  notes:
+    - "Fallback : SES Paris eu-west-3 si Brevo tombe / quota dépassé."
+    - "Domaine hma.business doit passer SPF + DKIM + DMARC (T016)."
+
+# -----------------------------------------------------------------------------
+# Sessions (FR-008)
+# -----------------------------------------------------------------------------
+sessions:
+  admin_max_seconds:   3600                     # 1h strict, appliqué GoTrue
+  user_max_seconds:    28800                    # 8h (enforcement app-level)
+  mvp_scope_note: |
+    En MVP, seuls des comptes admin existent → GOTRUE_JWT_EXP=3600
+    applique uniformément 1h. La différenciation 8h user sera appliquée
+    par le middleware applicatif dès l'introduction des rôles non-admin
+    (feature 002-schemas-rls-bootstrap + feature app).

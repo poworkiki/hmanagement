@@ -1,0 +1,23 @@
+# =============================================================================
+#  supabase-backup cron — à installer dans /etc/cron.d/supabase-backup
+#  chmod 644 /etc/cron.d/supabase-backup && chown root:root ...
+# =============================================================================
+#
+#  Conventions horaires :
+#    - heure VPS = UTC-3 (Brésil / Guyane française proche)
+#    - backup quotidien à 03h30 VPS = période de moindre activité
+#    - drill mensuel le 1er à 05h00 VPS
+#
+#  Couverture spec :
+#    FR-014, FR-017, FR-018 / Art. constitution 10.3
+# =============================================================================
+
+# Environnement PATH minimal pour le cron (cron ne charge pas .bashrc)
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+SHELL=/bin/bash
+
+# Sauvegarde quotidienne
+30 3 * * * root /usr/local/bin/pg-backup.sh >> /var/log/supabase-backup.log 2>&1
+
+# Drill de restauration mensuel (1er du mois)
+0  5 1 * * root /usr/local/bin/pg-restore-drill.sh >> /var/log/supabase-restore-drill.log 2>&1
