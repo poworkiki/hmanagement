@@ -1,0 +1,333 @@
+---
+
+description: "Task list for feature 001-supabase-selfhost"
+---
+
+# Tasks: Socle data self-hosted et souverain
+
+**Input**: Design documents from `/specs/001-supabase-selfhost/`
+**Prerequisites**: `plan.md`, `spec.md`, `research.md`, `data-model.md`, `contracts/platform-env-contract.md`, `contracts/admin-api-contract.md`, `quickstart.md`
+
+**Tests**: La feature n'implique pas de code applicatif testé par unit tests. En lieu et place, chaque SC-### (Success Criterion) fait l'objet d'une **tâche de vérification** qui reproduit l'acceptance scenario correspondant (smoke-tests `curl`/`psql`, drill de restauration, vérification monitoring). Ces tâches sont marquées explicitement `[VALID]`.
+
+**Organization**: Organisées par user story (US1 → US5) selon la priorité spec.md. Les chemins `infra/supabase/` et `docs/runbooks/` sont créés par cette feature (nouveaux dossiers dans le repo).
+
+## Format: `[ID] [P?] [Story] Description`
+
+- **[P]** : peut s'exécuter en parallèle (fichier différent, pas de dépendance bloquante)
+- **[Story]** : US1, US2, US3, US4, US5 — mappe vers les user stories du `spec.md`
+- **[VALID]** : tâche de validation / smoke-test (couvre une SC-###)
+- Tous les chemins de fichiers sont **relatifs à la racine du repo** `C:\hmanagement\`
+
+## Path Conventions
+
+- `infra/supabase/` — IaC (configuration + scripts d'ops, créé par cette feature)
+- `docs/runbooks/` — runbooks opérateur (créé par cette feature)
+- `docs/adr/` — décisions d'architecture (créé par cette feature)
+- `specs/001-supabase-selfhost/` — déjà existant (spec, plan, research, data-model, contracts, quickstart)
+- Actions Coolify / Vaultwarden / Cloudflare sont réalisées via leurs UI respectives et ne produisent **pas** de fichier dans le repo — ces tâches indiquent explicitement "UI" dans la description.
+
+---
+
+## Phase 1: Setup (shared infrastructure)
+
+**Purpose** : initialiser l'arborescence repo et l'outillage local requis pour toutes les US.
+
+- [ ] T001 [P] Créer l'arborescence `infra/supabase/` avec `README.md` pointeur vers `specs/001-supabase-selfhost/quickstart.md`
+- [ ] T002 [P] Créer l'arborescence `infra/supabase/backups/` (vide, prête à accueillir les scripts)
+- [ ] T003 [P] Créer l'arborescence `infra/supabase/monitoring/` (vide)
+- [ ] T004 [P] Créer l'arborescence `docs/runbooks/` avec un `README.md` index
+- [ ] T005 [P] Créer l'arborescence `docs/adr/` avec un `README.md` expliquant le format ADR utilisé (MADR light)
+- [ ] T006 [P] Ajouter à `.gitignore` les motifs sensibles : `*.env.local`, `*.env.production`, `*.backup`, `restic-cache/`, `*.sql.gz` (protection secrets Art. 4.5)
+- [ ] T007 Rédiger l'ADR `docs/adr/ADR-001-supabase-self-hosted-via-coolify.md` consignant la décision de déployer Supabase self-hosted sur Coolify (résumé du `research.md` R-001, R-002, R-003)
+
+---
+
+## Phase 2: Foundational (blocking prerequisites)
+
+**Purpose** : provisionner les ressources externes et les secrets **avant** toute tentative de déploiement. Toutes les user stories dépendent de cette phase.
+
+**⚠️ CRITICAL** : Aucune US ne peut démarrer avant la complétion de cette phase.
+
+### 2.1 DNS & domaine
+
+- [ ] T010 [UI Cloudflare] Créer l'enregistrement DNS type `A` : `supabase.hma.business` → `187.124.150.82`, mode "DNS only" (proxy désactivé). Vérification : `dig supabase.hma.business +short` renvoie l'IP du VPS.
+
+### 2.2 Cloudflare R2 pour sauvegardes
+
+- [ ] T011 [UI Cloudflare] Créer le bucket R2 `hma-supabase-backups` (région EU automatique). Activer object lifecycle optionnel : rien à configurer, restic gère la rétention.
+- [ ] T012 [UI Cloudflare] Générer un jeu d'API R2 à scope **restreint au bucket `hma-supabase-backups`** (Read+Write). Récupérer `Access Key ID`, `Secret Access Key`, `Account ID`.
+- [ ] T013 [UI Vaultwarden] Créer les 3 secrets correspondants : `supabase-selfhost-r2-account-id`, `supabase-selfhost-r2-access-key-id`, `supabase-selfhost-r2-secret-access-key` dans l'org `stack_hma`.
+
+### 2.3 Compte SMTP (Brevo)
+
+- [ ] T014 [UI Brevo] Créer (ou activer) un compte Brevo, valider le domaine `hma.business` (SPF + DKIM dans Cloudflare DNS).
+- [ ] T015 [UI Brevo] Générer une clé SMTP transactionnelle. Récupérer `SMTP host`, `SMTP user`, `SMTP password`.
+- [ ] T016 [UI Cloudflare] Ajouter les enregistrements DKIM/SPF/DMARC indiqués par Brevo dans la zone DNS `hma.business`.
+- [ ] T017 [UI Vaultwarden] Créer les 3 secrets `supabase-selfhost-smtp-host`, `supabase-selfhost-smtp-user`, `supabase-selfhost-smtp-pass`.
+
+### 2.4 Secrets Supabase dans Vaultwarden
+
+- [ ] T018 [P] [UI Vaultwarden] Générer et stocker `supabase-selfhost-jwt-secret` (40+ caractères aléatoires, `openssl rand -hex 32`).
+- [ ] T019 [P] [UI Vaultwarden] Générer et stocker `supabase-selfhost-anon-key` (JWT signé avec `JWT_SECRET`, claim `role=anon`, exp longue). Utiliser le tool officiel Supabase `supabase gen anon-key` ou équivalent.
+- [ ] T020 [P] [UI Vaultwarden] Générer et stocker `supabase-selfhost-service-role-key` (JWT signé, claim `role=service_role`).
+- [ ] T021 [P] [UI Vaultwarden] Générer et stocker `supabase-selfhost-postgres-password` (≥ 32 chars).
+- [ ] T022 [P] [UI Vaultwarden] Générer et stocker `supabase-selfhost-dashboard-password` (≥ 24 chars).
+- [ ] T023 [P] [UI Vaultwarden] Générer et stocker `supabase-selfhost-restic-password` (≥ 40 chars, sauvegardée aussi hors Vaultwarden pour disaster recovery — cf. runbook).
+
+### 2.5 Canal Telegram
+
+- [ ] T024 [UI Telegram] Créer le chat/groupe ops "HMA Supabase Ops" et inviter le bot `hmagents_bot`. Récupérer le `chat_id` (via `https://api.telegram.org/bot<TOKEN>/getUpdates`).
+- [ ] T025 [UI Vaultwarden] Stocker le `chat_id` dans le champ notes du secret existant `Telegram Bot — HMAGENTS` **ou** créer un nouveau secret `supabase-selfhost-telegram-chat-id-ops`.
+
+### 2.6 Reference de configuration versionnée (publique)
+
+- [ ] T026 Créer `infra/supabase/env.reference` avec **uniquement** les variables 📄 (publiques) de `contracts/platform-env-contract.md` (domain, TTLs, rate-limits, etc.) — aucune valeur secrète. Utilisateur final injectera les ✅ via Coolify UI.
+- [ ] T027 Créer `infra/supabase/gotrue-config-overrides.yml` documentant les overrides GoTrue décidés dans `research.md` R-007 : MFA, HIBP, disable signup, `JWT_EXP=3600`, **`OTP_EXP=900` (FR-009 Magic Link 15 min)**, rate-limits `EMAIL_SENT=10` + **`VERIFY=30`** + **`TOKEN_REFRESH=150`** (FR-013 brute-force). Source de vérité pour Coolify UI. Vérifier les noms exacts des variables contre la version GoTrue livrée par le template Supabase Coolify (cf. note de `contracts/platform-env-contract.md` §3).
+
+**Checkpoint Phase 2** : DNS résout, bucket R2 prêt, 12 secrets Vaultwarden en place, SMTP configuré, canal Telegram joint. **Les 5 user stories peuvent démarrer en parallèle à partir d'ici** (capacité équipe ≥ 2).
+
+---
+
+## Phase 3: User Story 1 — Plateforme data opérationnelle (Priority: P1) 🎯 MVP
+
+**Goal** : déployer l'instance Supabase accessible via `https://supabase.hma.business` avec Studio fonctionnel et PostgreSQL opérationnel.
+
+**Independent Test** : Ouvrir `https://supabase.hma.business/` dans un navigateur, se connecter à Studio, voir la base `postgres` vide opérationnelle. Depuis un tunnel SSH, `psql ... SELECT 1;` renvoie `1`.
+
+### Implementation for User Story 1
+
+- [ ] T030 [US1] Coolify UI → **Resources → New → Service** → sélectionner template "Supabase". Nommer le service `supabase-hma`.
+- [ ] T031 [US1] Coolify UI → onglet **Domains** → ajouter `supabase.hma.business`, activer TLS Let's Encrypt (Traefik intégré).
+- [ ] T032 [US1] Coolify UI → onglet **Environment Variables** → injecter **toutes** les variables listées dans `contracts/platform-env-contract.md` sections 1, 2, 3, 5. Marquer chaque secret ✅ comme "Masked".
+- [ ] T033 [US1] Coolify UI → onglet **Volumes** → vérifier qu'un volume persistant `supabase-db-data` est monté sur `/var/lib/postgresql/data` du conteneur `postgres`.
+- [ ] T034 [US1] Coolify UI → **Deploy**. Attendre 3-5 min que tous les conteneurs passent "Healthy".
+- [ ] T035 [US1] Rédiger `docs/runbooks/supabase-deploy.md` reprenant pas à pas la procédure exécutée (variables, pièges rencontrés). Source de vérité opérationnelle.
+- [ ] T036 [P] [US1] [VALID] (SC-001) Vérifier depuis un poste extérieur : `curl -I https://supabase.hma.business/` renvoie 200 en < 3 s, cadenas HTTPS valide navigateur.
+- [ ] T037 [P] [US1] [VALID] (SC-005) Tester un `docker restart` complet de la stack Supabase via Coolify UI — toute la stack doit remonter en < 5 min.
+- [ ] T038 [US1] [VALID] (User Story 1 scenarios 1-3) Tunnel SSH + `psql "postgresql://postgres:${POSTGRES_PASSWORD}@localhost:5433/postgres" -c "SELECT 1;"` → renvoie `1`.
+- [ ] T039 [US1] Dans Supabase Studio, effectuer une première connexion admin avec `DASHBOARD_USERNAME` + `DASHBOARD_PASSWORD`. Vérifier l'accès au tableau "Table Editor" (vide, pas d'erreur).
+
+**Checkpoint US1** : la plateforme est joignable et administrable. Les US2-US5 peuvent commencer en parallèle.
+
+---
+
+## Phase 4: User Story 2 — Authentification Magic Link + MFA TOTP (Priority: P1)
+
+**Goal** : permettre au super-admin de s'authentifier avec Magic Link et d'activer MFA TOTP obligatoire.
+
+**Independent Test** : un compte test reçoit un Magic Link, le clique, configure TOTP, et complète une session. La session expire bien après 1 h d'inactivité (admin).
+
+### Implementation for User Story 2
+
+- [ ] T050 [US2] Coolify UI → Env vars `supabase-hma` → vérifier que les overrides GoTrue de `infra/supabase/gotrue-config-overrides.yml` sont tous appliqués (`GOTRUE_MFA_ENABLED=true`, `GOTRUE_DISABLE_SIGNUP=true`, `GOTRUE_SECURITY_PASSWORDS_HIBP_ENABLED=true`, `GOTRUE_MAILER_AUTOCONFIRM=false`, `GOTRUE_JWT_EXP=3600`, `GOTRUE_OTP_EXP=900`, `GOTRUE_RATE_LIMIT_EMAIL_SENT=10`, `GOTRUE_RATE_LIMIT_VERIFY=30`, `GOTRUE_RATE_LIMIT_TOKEN_REFRESH=150`). Ajuster les noms exacts si la version GoTrue diffère (ex. `GOTRUE_MAILER_OTP_EXP`).
+- [ ] T051 [US2] Coolify UI → onglet **Restart** de l'app `supabase-hma` pour que les overrides prennent effet.
+- [ ] T052 [US2] Supabase Studio → **Authentication → Users → Invite user** → inviter `poworkiki@gmail.com` (compte super-admin cible).
+- [ ] T053 [US2] Depuis Gmail : cliquer sur le Magic Link reçu. Vérifier en temps réel que le mail arrive en < 60 s (User Story 2 scenario 1).
+- [ ] T054 [US2] Dans le parcours GoTrue : scanner le QR code TOTP avec une app auth, saisir le premier code à 6 chiffres. Vérifier que la session est active.
+- [ ] T055 [P] [US2] [VALID] (User Story 2 scenario 3) Se déconnecter, refaire un login : confirmer que TOTP **et** Magic Link sont tous deux requis pour compléter la session.
+- [ ] T056 [P] [US2] [VALID] (User Story 2 scenario 4) Laisser la session admin inactive 60 min. Tenter une action → redirection login attendue.
+- [ ] T057 [P] [US2] [VALID] (User Story 2 scenario 5) Récupérer un Magic Link, le cliquer une première fois (ok), retenter le même lien → refus avec message clair.
+- [ ] T058 [P] [US2] [VALID] (SC-002) Chronométrer l'activation d'un **second** compte admin MFA de bout en bout en suivant uniquement `docs/runbooks/supabase-deploy.md` : cible < 5 min.
+
+**Checkpoint US2** : le super-admin est authentifié avec MFA. L'authentification est production-ready.
+
+---
+
+## Phase 5: User Story 3 — Sauvegardes quotidiennes chiffrées (Priority: P1)
+
+**Goal** : produire une sauvegarde chiffrée quotidienne, la stocker sur R2, et valider la restauration mensuelle.
+
+**Independent Test** : après 24 h, au moins une sauvegarde présente sur R2 ; un drill de restauration sur container éphémère aboutit en < 30 min avec checksums vérifiés.
+
+### Implementation for User Story 3
+
+- [ ] T070 [P] [US3] Créer `infra/supabase/backups/pg-backup.sh` : script bash qui fait `pg_dump -Fc` du container Supabase, chiffre avec `restic` sur R2 (`RESTIC_REPOSITORY=s3:...`), applique la **politique de rétention** `restic forget --keep-daily 30 --keep-monthly 12 --prune` (FR-016), log stdout + exit code, envoie notif Telegram échec.
+- [ ] T071 [P] [US3] Créer `infra/supabase/backups/pg-restore-drill.sh` : télécharge dernier snapshot restic, spin un container PG 15 éphémère, `pg_restore`, exécute smoke-test SQL (`SELECT now()`, `SELECT count(*) FROM pg_tables`), rapporte résultat Telegram, détruit le container.
+- [ ] T072 [P] [US3] Créer `infra/supabase/backups/backup.cron` : entrée `/etc/cron.d/supabase-backup` exécutant `pg-backup.sh` à `30 03 * * *` (03h30 VPS) + entrée `0 5 1 * *` pour `pg-restore-drill.sh`.
+- [ ] T073 [P] [US3] Créer `infra/supabase/backups/README.md` : documentation rapide des 3 fichiers ci-dessus (invocation manuelle, options, codes de sortie).
+- [ ] T074 [US3] SSH sur le VPS `187.124.150.82` → `apt-get install -y restic` + copier `pg-backup.sh` et `pg-restore-drill.sh` vers `/usr/local/bin/` + `chmod 750` + `chown root:root`.
+- [ ] T075 [US3] SSH sur VPS → `sudo crontab -e` (ou `/etc/cron.d/supabase-backup`) → installer les 2 entrées.
+- [ ] T076 [US3] SSH sur VPS → exécuter **manuellement** `/usr/local/bin/pg-backup.sh --first-run`. Vérifier sortie `exit 0` et notification Telegram "backup OK".
+- [ ] T077 [US3] [UI Cloudflare R2] Vérifier que l'objet restic apparaît dans le bucket `hma-supabase-backups`, taille > 0.
+- [ ] T078 [US3] SSH sur VPS → exécuter **manuellement** `/usr/local/bin/pg-restore-drill.sh`. Chronométrer ≤ 30 min. Vérifier notification Telegram "restore drill OK".
+- [ ] T079 [US3] Rédiger `docs/runbooks/supabase-restore-drill.md` : procédure mensuelle (date, commande, résultat attendu, liste de contrôle d'intégrité).
+- [ ] T080 [US3] Créer `docs/runbooks/restore-drill-log.md` et y consigner la **première** exécution T078 (date, snapshot id, durée, résultat).
+- [ ] T081 [P] [US3] [VALID] (SC-003, FR-014) Attendre 24 h après T076 et vérifier qu'un **deuxième** snapshot automatique est apparu sur R2.
+- [ ] T082 [P] [US3] [VALID] (SC-004, FR-017) Le drill mensuel T078 valide déjà le critère : restauration < 30 min, intégrité OK.
+- [ ] T083 [P] [US3] [VALID] (FR-018) Simuler une panne de `pg-backup.sh` (ex : credentials R2 invalides temporairement) → notification Telegram d'échec reçue en < 15 min.
+
+**Checkpoint US3** : les sauvegardes tournent, restent chiffrées et sont restaurables prouvably.
+
+---
+
+## Phase 6: User Story 4 — API stable pour outils internes (Priority: P2)
+
+**Goal** : exposer une API REST contractuelle aux outils internes (n8n, dbt, scripts) avec clés API service séparées des comptes utilisateurs.
+
+**Independent Test** : un script externe avec `SERVICE_ROLE_KEY` effectue `INSERT` puis `SELECT` sur une table de test et obtient des réponses cohérentes en < 2 s cumulées.
+
+### Implementation for User Story 4
+
+- [ ] T100 [US4] Vérifier dans Coolify que `SERVICE_ROLE_KEY` et `ANON_KEY` sont bien injectés dans le conteneur `postgrest` (logs d'initialisation PostgREST sans erreur de JWT).
+- [ ] T101 [US4] Créer `infra/supabase/smoke-tests/api-contract.sh` : script qui (a) ping `GET /rest/v1/` avec `apikey: $ANON_KEY`, (b) tente un `POST /rest/v1/test_contract_table` sans JWT → doit renvoyer 401, (c) refait avec `SERVICE_ROLE_KEY` → 201, (d) `GET` vérifie persistence.
+- [ ] T102 [US4] SSH sur VPS → `psql` → créer table `public.test_contract_table (id serial primary key, note text, created_at timestamptz default now())` **temporaire** pour le smoke-test (sera supprimée en polish).
+- [ ] T103 [US4] [VALID] (User Story 4 scenarios 1-3, SC-006) Exécuter `infra/supabase/smoke-tests/api-contract.sh` depuis un poste extérieur. Chronométrer : < 2 s cumulées pour la séquence lecture-écriture-lecture.
+- [ ] T104 [US4] [VALID] (SC-008) Déclencher une rotation de `JWT_SECRET` (Coolify UI → env var → nouvelle valeur → restart) → confirmer que l'ancienne `SERVICE_ROLE_KEY` renvoie 401 en < 5 min.
+- [ ] T105 [US4] Documenter la procédure de rotation dans `docs/runbooks/supabase-secret-rotation.md` (fréquence trimestrielle JWT, annuel autres, action immédiate sur incident).
+
+**Checkpoint US4** : l'API REST est utilisable contractuellement par les outils downstream. Les rotations sont maîtrisées.
+
+---
+
+## Phase 7: User Story 5 — Observabilité & notifications (Priority: P2)
+
+**Goal** : le super-admin est notifié activement en cas d'indisponibilité, d'échec de sauvegarde, d'expiration de certificat, ou de disque plein.
+
+**Independent Test** : arrêt volontaire d'un conteneur Supabase → alerte Telegram reçue en < 5 min. Certificat simulé à 13 jours d'expiration → alerte préventive.
+
+### Implementation for User Story 5
+
+- [ ] T120 [P] [US5] [UI Uptime Kuma] Ajouter 4 probes HTTPS sur `https://status.hma.business` :
+  - `supabase-studio` : `HEAD https://supabase.hma.business/`
+  - `supabase-auth` : `GET https://supabase.hma.business/auth/v1/health`
+  - `supabase-rest` : `GET https://supabase.hma.business/rest/v1/`
+  - `supabase-tls-cert` : mode "Certificate Expiry", seuil 14 jours
+  Chaque probe : intervalle 60 s, retries 2, notifs Telegram + email.
+- [ ] T121 [P] [US5] Créer `infra/supabase/monitoring/uptime-kuma-probes.yaml` : description déclarative des 4 probes (documentation, pas consommé par Uptime Kuma mais permet de rejouer en cas de migration).
+- [ ] T122 [P] [US5] Créer `infra/supabase/monitoring/disk-alert.sh` : script bash qui lit `df --output=pcent /var/lib/docker` et pousse un webhook Telegram si > 80 %.
+- [ ] T123 [US5] SSH sur VPS → copier `disk-alert.sh` vers `/usr/local/bin/` + entrée cron `*/15 * * * * /usr/local/bin/disk-alert.sh` (toutes les 15 min).
+- [ ] T124 [P] [US5] [VALID] (SC-009, User Story 5 scenario 1) Arrêt volontaire du conteneur Studio via Coolify UI pendant 3 min → alerte Telegram reçue en < 5 min.
+- [ ] T125 [P] [US5] [VALID] (User Story 5 scenario 2) Redémarrer le conteneur → notif de résolution Telegram reçue.
+- [ ] T126 [P] [US5] [VALID] (FR-021) Dans Uptime Kuma → forcer un test du probe certificat → confirmer que l'alerte seuil 14 jours est fonctionnelle.
+- [ ] T127 [US5] Rédiger `docs/runbooks/supabase-incident.md` : arbre de décision des incidents courants (DB down, auth down, backup KO, disque plein, cert bientôt expiré). Inclure les 5 cas du tableau §4 de `quickstart.md`.
+
+**Checkpoint US5** : le super-admin est alerté activement sur tous les signaux critiques.
+
+---
+
+## Phase 8: Polish & Cross-Cutting Concerns
+
+**Purpose** : finaliser la documentation, valider les SC transverses et purger les artefacts temporaires.
+
+- [ ] T140 [P] [VALID] (SC-007) `grep -RIn --include='*.md' --include='*.sh' --include='*.yml' --include='*.yaml' -E "(JWT_SECRET|SERVICE_ROLE_KEY|ANON_KEY|POSTGRES_PASSWORD|RESTIC_PASSWORD|SMTP_PASS)=" C:/hmanagement/infra C:/hmanagement/docs` → doit renvoyer **zéro** ligne contenant une valeur (uniquement des noms de variables référencés).
+- [ ] T141 [P] [VALID] (SC-007 bis) Inspecter Coolify UI logs des conteneurs `gotrue`, `postgrest`, `postgres` sur les 24 dernières heures → chercher toute fuite de secret. Résultat attendu : aucune.
+- [ ] T142 [P] [VALID] (SC-010) Exécuter un `nmap -Pn -p 1-65535 supabase.hma.business` depuis un poste extérieur → seuls 80 (redirect) et 443 doivent apparaître `open`.
+- [ ] T143 Cleanup post-US4 : SSH sur VPS → `psql ... DROP TABLE public.test_contract_table;` → supprimer la table temporaire créée en T102.
+- [ ] T144 Finaliser `docs/runbooks/supabase-deploy.md` avec toutes les leçons du déploiement réel (variables qui ont posé problème, ordre d'injection des secrets, pièges Coolify).
+- [ ] T145 Rédiger `docs/runbooks/supabase-secret-rotation.md` complet : procédure détaillée par type de secret (JWT, SMTP, R2, restic, dashboard, postgres).
+- [ ] T146 Mettre à jour `CLAUDE.md` section "État du dépôt" : Sprint 1 jalon 1 complété, plateforme Supabase opérationnelle sur `supabase.hma.business`.
+- [ ] T147 [VALID] Exécuter intégralement la checklist "smoke-test" de `quickstart.md` section 3 → tous les checks passent.
+- [ ] T149 [P] [VALID] (FR-022) Tester `disk-alert.sh` en abaissant temporairement le seuil à `1` dans le script (ou via variable d'environnement dédiée) et lancer `/usr/local/bin/disk-alert.sh` → confirmer qu'une notification Telegram "disk > threshold" est bien reçue. Restaurer le seuil à 80 %.
+- [ ] T148 Ouvrir une Pull Request de la branche `001-supabase-selfhost` vers `main` avec description pointant vers `specs/001-supabase-selfhost/` et demander la revue (Art. constitution 5.3).
+
+---
+
+## Dependencies & Execution Order
+
+### Phase Dependencies
+
+- **Phase 1 (Setup)** : aucune dépendance — démarre immédiatement.
+- **Phase 2 (Foundational)** : dépend de Phase 1. **BLOQUE** toutes les US.
+- **Phase 3 (US1)** : dépend de Phase 2.
+- **Phase 4 (US2)** : dépend de US1 (GoTrue ne peut être configuré qu'une fois Supabase déployé).
+- **Phase 5 (US3)** : dépend de US1 (il faut un PostgreSQL à sauvegarder). **Indépendant** de US2.
+- **Phase 6 (US4)** : dépend de US1 (PostgREST doit être opérationnel). **Indépendant** de US2, US3.
+- **Phase 7 (US5)** : dépend de US1 (endpoints doivent exister pour être surveillés). **Indépendant** de US2, US3, US4.
+- **Phase 8 (Polish)** : dépend de toutes les US.
+
+### User Story Dependencies
+
+```
+Setup ──▶ Foundational ──┬──▶ US1 ──┬──▶ US2 ─┐
+                         │          ├──▶ US3 ─┼──▶ Polish
+                         │          ├──▶ US4 ─┤
+                         │          └──▶ US5 ─┘
+```
+
+### Within Each User Story
+
+- Tâches d'implémentation sans dépendance mutuelle sont marquées `[P]`.
+- Les tâches `[VALID]` s'exécutent après les tâches d'implémentation correspondantes.
+
+### Parallel Opportunities
+
+- Phase 1 : T001-T006 peuvent toutes s'exécuter en parallèle (créations de dossiers indépendants).
+- Phase 2 : T018-T023 (génération secrets Vaultwarden) peuvent s'exécuter en parallèle.
+- US2/US3/US4/US5 : indépendantes une fois US1 done → 4 développeurs pourraient avancer simultanément.
+- Tâches `[VALID]` d'une même US : toutes parallèles.
+- Phase 8 : T140, T141, T142 parallèles (inspection indépendante).
+
+---
+
+## Parallel Example: Phase 2 (Foundational)
+
+```bash
+# Génération des secrets Supabase Vaultwarden en parallèle :
+Task: "T018 — générer supabase-selfhost-jwt-secret"
+Task: "T019 — générer supabase-selfhost-anon-key"
+Task: "T020 — générer supabase-selfhost-service-role-key"
+Task: "T021 — générer supabase-selfhost-postgres-password"
+Task: "T022 — générer supabase-selfhost-dashboard-password"
+Task: "T023 — générer supabase-selfhost-restic-password"
+```
+
+## Parallel Example: validation finale Polish
+
+```bash
+# Trois audits indépendants :
+Task: "T140 — grep secrets en clair dans repo"
+Task: "T141 — inspection logs Coolify"
+Task: "T142 — nmap ports exposés"
+```
+
+---
+
+## Implementation Strategy
+
+### MVP First (US1 seul)
+
+1. Complete Phase 1 (Setup) — T001 à T007.
+2. Complete Phase 2 (Foundational) — T010 à T027. **CRITIQUE — bloque tout**.
+3. Complete Phase 3 (US1) — T030 à T039.
+4. **STOP et VALIDATE** : plateforme joignable, Studio accessible, PG répond.
+5. À ce stade la feature a déjà de la valeur (accès admin) mais n'est **pas production-ready** : pas d'auth MFA, pas de backup, pas de monitoring.
+
+### Incremental Delivery (recommandé)
+
+Étapes successives, chacune démontrable :
+
+1. Phase 1 + 2 → Foundation ready.
+2. Phase 3 (US1) → Demo 1 : plateforme joignable.
+3. Phase 4 (US2) → Demo 2 : auth MFA opérationnelle.
+4. Phase 5 (US3) → Demo 3 : backups tournent + 1er drill OK.
+5. Phase 7 (US5) → Demo 4 : monitoring actif, Telegram reçoit des alertes réelles.
+6. Phase 6 (US4) → Demo 5 : API REST consommable par n8n/dbt.
+7. Phase 8 → clôture + PR + revue + merge.
+
+**Ordre suggéré** : US1 → US2 → US3 → US5 → US4 → Polish.
+Rationale : US3 (backups) et US5 (monitoring) sont plus critiques en production que US4 (API REST consommée principalement par des features futures pas encore déployées).
+
+### Parallel Team Strategy
+
+Avec 2 personnes (Kiki + 1 binôme) :
+
+1. Ensemble : Phase 1 + Phase 2.
+2. Ensemble : Phase 3 (US1) — nécessite accès Coolify non partageable.
+3. Parallélisation post-US1 :
+   - Personne A : US2 (auth + rédaction runbook deploy)
+   - Personne B : US3 (scripts backup + drill + R2)
+4. Ensemble : US5 (monitoring — nécessite Uptime Kuma) puis US4 (API smoke-test).
+5. Polish séquentiel.
+
+---
+
+## Notes
+
+- `[P]` = fichiers différents, pas de dépendance bloquante.
+- `[UI …]` = action manuelle dans l'interface du produit tiers (Coolify, Vaultwarden, Cloudflare, Brevo, Uptime Kuma, Telegram) — ne produit pas de fichier dans le repo mais reste traçable par le runbook correspondant.
+- `[VALID]` = validation d'une SC-### ou d'un acceptance scenario de `spec.md` — à exécuter après les tâches d'implémentation de la même US.
+- Chaque groupe de tâches complété doit déclencher un **commit dédié** (Art. constitution 5.3). Ex : "T001-T007 Setup arborescence", "T010-T027 Foundational", "T030-T039 US1 deploy", etc.
+- Aucune tâche ne doit exposer un secret en clair dans le repo. Si un fichier accepte une valeur secrète, il utilise une variable d'environnement qui pointe vers Vaultwarden.
+- Verifier `tests/` ? Non applicable : pas de code applicatif testé. Les smoke-tests (`infra/supabase/smoke-tests/`) + les drills de restauration sont la couche de validation.
+- Tout blocage sur une tâche `[UI …]` (quota Brevo, clé R2 qui ne fonctionne pas, etc.) **MUST** être consigné comme incident dans `docs/runbooks/supabase-incident.md` ou dans les notes de PR.
