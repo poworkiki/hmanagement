@@ -21,7 +21,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                       UTILISATEURS                              │
-│              (Kiki super_admin, gérant, gestionnaire)           │
+│          (Kiki admin, pdg, daf, manager, userview)              │
 └────────────────────────────┬────────────────────────────────────┘
                              │ HTTPS
                              ▼
@@ -187,16 +187,32 @@ Pagination TanStack Virtual : 100 écritures
 
 **Règle** : un bug à n'importe quel niveau est rattrapé par le niveau suivant.
 
-### 5.2 RBAC — 4 rôles stockés dans `app.profiles.role`
+### 5.2 RBAC — 5 rôles stockés dans `app.profiles.role`
 
-| Rôle | Voit | Modifie |
-|---|---|---|
-| `super_admin` | Tout (cross-tenant en V2) | Users, entités, budgets, export |
-| `admin` | Consolidé groupe + toutes filiales | Users de son tenant, budgets |
-| `controleur` | Sa filiale (via `entite_id`) | Budget de sa filiale, commentaires |
-| `consultant` | Sa filiale, lecture seule | Rien (export CSV uniquement) |
+Enum Postgres canonique :
 
-**Les rôles ne sont JAMAIS dans `auth.users.user_metadata`** (modifiable par user). Lus via helper `app.current_role()`.
+```sql
+CREATE TYPE app.user_role AS ENUM (
+  'admin',      -- propriétaire plateforme (Kiki en MVP, cross-tenant en V2)
+  'pdg',        -- dirigeant groupe, lecture exécutive
+  'daf',        -- finance ops (budgets, imports)
+  'manager',    -- gérant de filiale, scope entite_id
+  'userview'    -- lecture externe (expert-compta, consultant audit)
+);
+```
+
+| Rôle | Voit | Modifie | Exemple HMA |
+|---|---|---|---|
+| `admin` | Tout son tenant (cross-tenant V2) | Users, tenants, entités, budgets, tout | Kiki (toi) |
+| `pdg` | Consolidé groupe + toutes entités du tenant | Commentaires, validations (pas la data brute) | Dirigeant groupe HMA |
+| `daf` | Tout son tenant + détails | Budgets, commentaires, imports CSV | Directeur administratif & financier |
+| `manager` | Sa filiale via `entite_id` | Budget de sa filiale, commentaires | Gérant STIVMAT / STA / ETPA |
+| `userview` | Sa filiale (périmètre donné), lecture seule | Rien (exports CSV autorisés) | Expert-comptable externe, consultant audit |
+
+**Invariants** :
+- Les rôles ne sont **JAMAIS** dans `auth.users.user_metadata` (modifiable par le user). Lus uniquement via helper `app.current_role()` qui lit `app.profiles`.
+- MFA TOTP **obligatoire** pour `admin`, `pdg`, `daf` (écriture sensible ou visibilité cross-entité).
+- `manager` et `userview` sont **scopés par `entite_id`** (colonne sur `app.profiles`). Un manager ne voit JAMAIS une entité autre que la sienne.
 
 ### 5.3 RLS — pattern canonique
 
@@ -206,7 +222,7 @@ CREATE POLICY tenant_isolation ON marts.mart_compte_resultat
   FOR SELECT TO authenticated
   USING (tenant_id = (SELECT tenant_id FROM app.profiles WHERE id = auth.uid()));
 
--- Policy rôle + entité
+-- Policy rôle + entité — lecture scopée selon RBAC 5 rôles
 CREATE POLICY role_and_entity ON marts.mart_compte_resultat
   FOR SELECT TO authenticated
   USING (
@@ -215,11 +231,28 @@ CREATE POLICY role_and_entity ON marts.mart_compte_resultat
       WHERE p.id = auth.uid()
         AND p.tenant_id = mart_compte_resultat.tenant_id
         AND (
-          p.role IN ('super_admin', 'admin')            -- tout voir
-          OR p.entite_id = mart_compte_resultat.entite_id  -- sa filiale
+          p.role IN ('admin', 'pdg', 'daf')               -- accès tout le tenant
+          OR (p.role IN ('manager', 'userview')           -- scoped à leur entité
+              AND p.entite_id = mart_compte_resultat.entite_id)
         )
     )
   );
+
+-- Policy écriture — seuls admin et daf écrivent sur les budgets ; manager sur sa propre entité
+CREATE POLICY budget_write ON app.budgets
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM app.profiles p
+      WHERE p.id = auth.uid()
+        AND p.tenant_id = budgets.tenant_id
+        AND (
+          p.role IN ('admin', 'daf')                      -- écriture libre sur le tenant
+          OR (p.role = 'manager' AND p.entite_id = budgets.entite_id)  -- scoped
+        )
+    )
+  );
+-- Note : 'pdg' et 'userview' ne sont pas listés → INSERT refusé pour eux.
 ```
 
 ### 5.4 Auth flow
@@ -228,7 +261,7 @@ CREATE POLICY role_and_entity ON marts.mart_compte_resultat
 1. User demande Magic Link sur /login
 2. GoTrue envoie email (SMTP configuré : Brevo ou OVH)
 3. User clique link → callback /auth/callback
-4. Si rôle super_admin/admin : challenge MFA TOTP
+4. Si rôle `admin`, `pdg` ou `daf` : challenge MFA TOTP obligatoire
 5. Session JWT 8h (user) / 1h (admin) — enforced middleware
 6. app.profiles.actif doit être true (nouveau user = false par défaut)
 ```
