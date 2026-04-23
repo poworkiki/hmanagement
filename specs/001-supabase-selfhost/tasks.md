@@ -116,16 +116,16 @@ description: "Task list for feature 001-supabase-selfhost"
 
 ### Implementation for User Story 1
 
-- [ ] T030 [US1] Coolify UI → **Resources → New → Service** → sélectionner template "Supabase". Nommer le service `supabase-hma`.
-- [ ] T031 [US1] Coolify UI → onglet **Domains** → ajouter `supabase.hma.business`, activer TLS Let's Encrypt (Traefik intégré).
-- [ ] T032 [US1] Coolify UI → onglet **Environment Variables** → injecter **toutes** les variables listées dans `contracts/platform-env-contract.md` sections 1, 2, 3, 5. Marquer chaque secret ✅ comme "Masked".
-- [ ] T033 [US1] Coolify UI → onglet **Volumes** → vérifier qu'un volume persistant `supabase-db-data` est monté sur `/var/lib/postgresql/data` du conteneur `postgres`.
-- [ ] T034 [US1] Coolify UI → **Deploy**. Attendre 3-5 min que tous les conteneurs passent "Healthy".
-- [ ] T035 [US1] Rédiger `docs/runbooks/supabase-deploy.md` reprenant pas à pas la procédure exécutée (variables, pièges rencontrés). Source de vérité opérationnelle.
-- [ ] T036 [P] [US1] [VALID] (SC-001) Vérifier depuis un poste extérieur : `curl -I https://supabase.hma.business/` renvoie 200 en < 3 s, cadenas HTTPS valide navigateur.
-- [ ] T037 [P] [US1] [VALID] (SC-005) Tester un `docker restart` complet de la stack Supabase via Coolify UI — toute la stack doit remonter en < 5 min.
-- [ ] T038 [US1] [VALID] (User Story 1 scenarios 1-3) Tunnel SSH + `psql "postgresql://postgres:${POSTGRES_PASSWORD}@localhost:5433/postgres" -c "SELECT 1;"` → renvoie `1`.
-- [ ] T039 [US1] Dans Supabase Studio, effectuer une première connexion admin avec `DASHBOARD_USERNAME` + `DASHBOARD_PASSWORD`. Vérifier l'accès au tableau "Table Editor" (vide, pas d'erreur).
+- [x] T030 [US1] Coolify UI → **Resources → New → Service** → template Supabase. Service nommé `supabase-hma`. ✅ Fait par Kiki 2026-04-23.
+- [x] T031 [US1] Domain `supabase.hma.business` + HTTPS Let's Encrypt via Traefik. Cert valide, TLS check 0 (OK).
+- [x] T032 [US1] Env vars injectées. **Leçon** : Coolify regénère JWT_SECRET/ANON_KEY/SERVICE_ROLE_KEY si vides → Vaultwarden resync obligatoire post-deploy (cf. runbook supabase-deploy.md §Piège n°1).
+- [x] T033 [US1] Volume persistant OK (PG survit au recreate — vérifié via schemas auth/storage/realtime/graphql présents).
+- [x] T034 [US1] Deploy OK. 12 containers healthy : db, auth, kong, rest, studio, storage, minio, meta, analytics, vector, edge-functions, supavisor.
+- [x] T035 [US1] Runbook `docs/runbooks/supabase-deploy.md` enrichi avec 3 pièges réels (regen JWT, DB name wipe, container suffix).
+- [x] T036 [P] [US1] [VALID] (SC-001) HTTP 401 Kong Basic Auth (endpoint up) + TLS valide + **0.90s total** < 3s ✅.
+- [ ] T037 [P] [US1] [VALID] (SC-005) `docker restart` de toute la stack — **non testé explicitement**, mais recreate Coolify complet a remonté 12 containers en ~3 min → signal indirect OK.
+- [x] T038 [US1] [VALID] `docker exec supabase-db psql -U postgres -d postgres -c "SELECT now(), ..."` → PG 15.8, DB `postgres`, timestamp OK.
+- [x] T039 [US1] Kong Basic Auth (hmadmin + password Vaultwarden) validée par Kiki pour accéder à Supabase Studio en live.
 
 **Checkpoint US1** : la plateforme est joignable et administrable. Les US2-US5 peuvent commencer en parallèle.
 

@@ -111,11 +111,54 @@ Voir `infra/supabase/monitoring/uptime-kuma-probes.yaml` pour les 4 sondes à cr
 - [ ] Probe certificat TLS ajoutée
 - [ ] `disk-alert.sh` installé + entrée cron
 
-## Pièges à documenter (à enrichir au fil des déploiements)
+## Pièges observés (1er deploy 2026-04-23)
 
-> Section à compléter après chaque déploiement réel avec les vraies surprises rencontrées.
+### 🔥 Piège n°1 — Coolify regénère JWT_SECRET + ANON_KEY + SERVICE_ROLE_KEY si les env vars sont vides
 
-- _(à remplir lors du 1er deploy)_
+**Observé** : à la création du service (ou recreate), Coolify remplit automatiquement ces 3 valeurs avec du random si tu laisses les champs vides. Il **n'utilise pas** ton `supabase-selfhost-jwt-secret` de Vaultwarden à moins que tu le colles explicitement.
+
+**Conséquence** : les valeurs stockées dans Vaultwarden (générées pre-deploy) deviennent périmées. L'app marche (Coolify a injecté les nouvelles en RAM), mais tout consommateur externe (n8n, scripts backup, app Next.js future) qui utilisait les anciennes clés casse silencieusement.
+
+**Mitigation** :
+- **Avant Deploy** : coller explicitement `JWT_SECRET`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` depuis Vaultwarden
+- **Après tout Deploy / Recreate / "Redeploy" Coolify** : re-dump les env vars live et re-sync Vaultwarden
+  ```bash
+  ssh hma 'AUTH=$(docker ps --format "{{.Names}}" | grep supabase-auth | head -1); docker exec "$AUTH" env | grep -E "^(JWT_SECRET|SUPABASE_ANON_KEY|SUPABASE_SERVICE_ROLE_KEY)"'
+  ```
+  puis mettre à jour les 3 secrets Vaultwarden correspondants.
+
+### 🔥 Piège n°2 — Si tu changes `POSTGRES_DB`, il FAUT wiper le volume
+
+**Observé** : le 1er deploy utilisait `POSTGRES_DB=hmagestion` par erreur. Quand on a tenté de changer à `POSTGRES_DB=postgres` sans wiper le volume, les containers `auth` + `storage` sont rentrés en boucle de restart :
+- `auth` : `ERROR: no schema has been selected to create in (SQLSTATE 3F000)`
+- `storage` : `permission denied for database postgres`
+
+**Cause racine** : le template Supabase initialise les rôles (`supabase_auth_admin`, `supabase_storage_admin`, etc.) + schémas (`auth`, `storage`, ...) + permissions **uniquement sur la DB spécifiée au 1er boot**. Quand on change le nom, le boot suivant pointe sur une DB existante (ici `postgres`, DB système par défaut de PG) **sans ces setups**.
+
+**Fix** : Stop Supabase service → Delete le volume `supabase-db-data` → Redeploy avec le bon `POSTGRES_DB`. Les init scripts re-tournent proprement sur une DB vierge. Zéro-data loss acceptable si deployment fraîchement initialisé.
+
+**Prévention** : fixer `POSTGRES_DB=postgres` **dès le 1er deploy** (nom standard, évite ce piège).
+
+### 🔥 Piège n°3 — Le suffix container Coolify change à chaque recreate
+
+**Observé** : `supabase-db-h2sfm13bom19dowtw0ygmz0m` → `supabase-db-akl6uxedbax9mxsmy64ydcou` après recreate.
+
+**Conséquence** : le `SUPABASE_PG_CONTAINER` dans `/etc/supabase-backup/env` devient périmé.
+
+**Mitigation** : après tout Recreate Coolify, mettre à jour ce fichier sur le VPS :
+```bash
+ssh hma 'docker ps --format "{{.Names}}" | grep supabase-db | head -1'
+# copier la sortie dans /etc/supabase-backup/env: SUPABASE_PG_CONTAINER=<valeur>
+```
+
+Alternative senior : patcher `pg-backup.sh` pour auto-découvrir (remplacer `SUPABASE_PG_CONTAINER` env var par `docker ps --filter 'name=supabase-db-' --format '{{.Names}}' | head -1`). **Reporté** car fait perdre l'explicite.
+
+### Note — Kong Basic Auth au-devant de Studio
+
+- Username : `hmadmin` (aligné avec user Authentik)
+- Password : `supabase-selfhost-dashboard-password` dans Vaultwarden
+- Kong intercepte les routes `/auth`, `/rest`, `/realtime`, `/storage` et exige soit Basic Auth (pour Studio UI), soit `apikey` header avec anon ou service_role JWT (pour API machine-to-machine)
+- Les endpoints `/rest/v1/` et `/auth/v1/*` renvoient **HTTP 401** si tu fais un curl sans `apikey` — c'est normal, pas une panne
 
 ## Rollback
 
