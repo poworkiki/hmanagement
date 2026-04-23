@@ -1,0 +1,76 @@
+# =============================================================================
+#  uptime-kuma-probes.yaml
+#  Description déclarative des sondes Uptime Kuma pour supabase.hma.business.
+#
+#  ⚠️ Ce fichier n'est PAS consommé automatiquement par Uptime Kuma.
+#     Il sert de source de vérité documentaire pour re-créer les sondes
+#     en cas de migration / réinstallation. Les sondes sont créées dans
+#     l'UI `https://status.hma.business`.
+#
+#  Couverture spec : FR-019 (health-checks), FR-020 (notif indispo), FR-021 (cert)
+# =============================================================================
+
+version: "1"
+target: "https://status.hma.business"
+group: "supabase-hma"
+
+defaults:
+  interval_seconds: 60
+  retries: 2
+  notification_channels:
+    - telegram_hmagents_bot
+    - email_hmagestion
+
+probes:
+
+  - name: supabase-studio
+    type: http
+    method: HEAD
+    url: https://supabase.hma.business/
+    expect_status: 200
+    timeout_seconds: 10
+    covers_fr: [FR-020]
+    covers_sc: [SC-001]
+
+  - name: supabase-auth
+    type: http
+    method: GET
+    url: https://supabase.hma.business/auth/v1/health
+    expect_status: 200
+    expect_body_contains: ["version"]
+    timeout_seconds: 10
+    covers_fr: [FR-019, FR-020]
+
+  - name: supabase-rest
+    type: http
+    method: GET
+    url: https://supabase.hma.business/rest/v1/
+    # 200 (OpenAPI root) ou 401 (si apikey manquante) acceptables :
+    # PostgREST répond, c'est ce qui nous intéresse.
+    expect_status_in: [200, 401]
+    timeout_seconds: 10
+    covers_fr: [FR-019, FR-020]
+
+  - name: supabase-tls-cert
+    type: certificate_expiry
+    hostname: supabase.hma.business
+    port: 443
+    alert_threshold_days: 14
+    covers_fr: [FR-021]
+
+notifications:
+
+  telegram_hmagents_bot:
+    type: telegram
+    bot_token_source: vaultwarden://stack_hma/Telegram-Bot-HMAGENTS
+    chat_id_source: vaultwarden://stack_hma/supabase-selfhost-telegram-chat-id-ops
+
+  email_hmagestion:
+    type: smtp_or_plain_email
+    to: hmagestion@gmail.com
+
+notes:
+  - "Cadence 60s + 2 retries ≈ 2 min avant alerte → conforme FR-020."
+  - "Uptime Kuma n'envoie pas d'alerte pour le 1er échec (évite flap sur latence réseau)."
+  - "Certificate expiry probe : Uptime Kuma supporte nativement (type HTTPs + 'Certificate Expiry' toggle)."
+  - "Ajouter une 5e probe 'supabase-storage' si Storage sort de l'état 'inactif MVP' (aujourd'hui démarré mais non consommé)."

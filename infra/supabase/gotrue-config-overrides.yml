@@ -1,0 +1,80 @@
+# =============================================================================
+#  gotrue-config-overrides.yml
+#  Overrides GoTrue pour l'instance Supabase self-hosted hmanagement.
+#
+#  ⚠️ Ce fichier est DESCRIPTIF. La source de vérité d'exécution est
+#  Coolify UI → Env vars de l'app `supabase-hma`. Ce YAML permet de
+#  (a) documenter les décisions, (b) auditer la config courante,
+#  (c) reconstruire la config en cas de réinstallation.
+#
+#  Décisions : research.md R-007 + R-011 (Authentik OIDC délégation,
+#  /speckit-clarify 2026-04-22) + remédiation /speckit-analyze (G1, G2, U1)
+# =============================================================================
+
+version: "2"
+service: supabase-hma/auth
+source_of_truth: coolify_ui
+auth_strategy: "delegated_oidc"
+idp: "authentik (auth.hma.business)"
+gotrue_version_check: "verify exact env var names against GoTrue version shipped by Coolify Supabase template at deploy time"
+
+# -----------------------------------------------------------------------------
+# Authentification — délégation à Authentik via OIDC
+# -----------------------------------------------------------------------------
+auth:
+  site_url:              "https://supabase.hma.business"
+  api_external_url:      "https://supabase.hma.business/auth/v1"
+  disable_signup:        true                   # pas d'auto-inscription
+  jwt_exp_seconds:       3600                   # FR-008 : cap 1h (MVP = admin only)
+  external_email_enabled: false                 # désactive Magic Link natif (Authentik prend le relais)
+  mailer_autoconfirm:    false                  # inchangé (garde-fou)
+
+# -----------------------------------------------------------------------------
+# OIDC — provider Authentik (compatible Keycloak)
+# -----------------------------------------------------------------------------
+oidc:
+  provider:              "keycloak"             # Authentik exposé comme keycloak
+  provider_alias_note:   "GoTrue v2.170+ peut utiliser `custom` au lieu de `keycloak` pour les OIDC génériques. Tester au déploiement."
+  enabled_env_var:       "GOTRUE_EXTERNAL_KEYCLOAK_ENABLED=true"
+  url:                   "https://auth.hma.business/application/o/supabase-hma/"
+  redirect_uri:          "https://supabase.hma.business/auth/v1/callback"
+  client_id_secret_id:   "supabase-selfhost-oidc-client-id"     # Vaultwarden
+  client_secret_id:      "supabase-selfhost-oidc-client-secret" # Vaultwarden
+  scopes:                ["openid", "email", "profile"]
+  rotation_policy:       "client_secret annuel ou immédiat si suspecté compromis"
+
+# -----------------------------------------------------------------------------
+# MFA (FR-007) — enforcé côté IdP Authentik
+# -----------------------------------------------------------------------------
+mfa:
+  enforced_at: "authentik"
+  mechanism:  "group + policy Authentik — `supabase-hma-admins` avec MFA TOTP obligatoire"
+  claim_check: "JWT Authentik contient claim attestant MFA (ex. `amr: ['mfa']`)"
+  notes:
+    - "Plus besoin de GOTRUE_MFA_ENABLED — GoTrue accepte le token OIDC validé par Authentik."
+    - "Révocation = retrait du groupe Authentik → next JWT refresh bloqué."
+
+# -----------------------------------------------------------------------------
+# Sécurité & rate-limits — reporté côté Authentik
+# -----------------------------------------------------------------------------
+security_policies_location: "authentik"
+notes_security:
+  - "FR-010 HIBP : policy Authentik (Password Policy → HIBP lookup)."
+  - "FR-013 rate-limit login : policy Authentik (Rate-Limit Stage sur login flow)."
+  - "FR-009 TTL Magic Link 15 min : setting Authentik (Token Validity → Invitations/Email)."
+
+# -----------------------------------------------------------------------------
+# Sessions (FR-008)
+# -----------------------------------------------------------------------------
+sessions:
+  admin_max_seconds:   3600                     # 1h strict, appliqué GoTrue JWT_EXP
+  user_max_seconds:    28800                    # 8h (enforcement app-level futur)
+  authentik_session_cookie_note: |
+    Le cookie de session Authentik a son propre TTL (par défaut très long).
+    Pour durcir côté IdP, configurer "Session Stage duration" dans Authentik
+    à une valeur cohérente (≤ 8h) pour éviter un SSO silencieux indéfini.
+  mvp_scope_note: |
+    En MVP, seuls des comptes admin existent → GOTRUE_JWT_EXP=3600 applique
+    uniformément 1h. La différenciation 8h user sera appliquée par le
+    middleware applicatif dès l'introduction des rôles non-admin
+    (feature 002-schemas-rls-bootstrap + feature app).

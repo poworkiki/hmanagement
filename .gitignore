@@ -5,6 +5,10 @@
 *.pem
 *.key
 
+# Fichier d'inventaire local des creds (jamais committé, cf. CLAUDE.md)
+credentials-stack-hma.md
+credentials-*.md
+
 # ── Node / Next.js ───────────────────────────────────────
 node_modules/
 .next/
@@ -68,3 +72,14 @@ pnpm-debug.log*
 .pnp.*
 tmp/
 temp/
+
+# ── Infra backups & restic ───────────────────────────────
+*.backup
+*.dump
+*.sql
+*.sql.gz
+restic-cache/
+.restic-cache/
+/infra/**/secrets/
+/infra/**/*.env
+/infra/supabase/env.local
