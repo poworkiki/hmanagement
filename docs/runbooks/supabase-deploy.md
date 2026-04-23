@@ -153,6 +153,26 @@ ssh hma 'docker ps --format "{{.Names}}" | grep supabase-db | head -1'
 
 Alternative senior : patcher `pg-backup.sh` pour auto-découvrir (remplacer `SUPABASE_PG_CONTAINER` env var par `docker ps --filter 'name=supabase-db-' --format '{{.Names}}' | head -1`). **Reporté** car fait perdre l'explicite.
 
+### 🔥 Piège n°4 — Restart Coolify de stack multi-container peut laisser des containers `Created` sans start
+
+**Observé** (2026-04-23, pendant l'activation OIDC) : après `stop` puis `start` de l'app Supabase via API Coolify, 13 containers ont été recréés en état `Created` mais jamais passés en `Running`. Coolify a accepté la requête (`HTTP 200 "Service starting request queued"`) mais le deployment hangeait silencieusement.
+
+**Symptôme** :
+- Status Coolify : `starting:unhealthy` persistant
+- `docker ps -a` montre les containers en `Created` sans transition
+- Aucun log d'erreur bloquant dans Coolify
+
+**Fix appliqué** : force manuellement le démarrage de tous les containers stoppés :
+```bash
+ssh hma 'docker ps -a --format "{{.Names}} {{.Status}}" | \
+  grep -E "<SERVICE_UUID>" | awk "\$2 == \"Created\" {print \$1}" | \
+  xargs -n 1 -r docker start'
+```
+
+Après ~30-60s les health-checks passent et la stack est `running:healthy`.
+
+**Prévention** : utiliser l'endpoint `/api/v1/services/{uuid}/restart` directement (au lieu de stop→start séquentiels) — testé marche mieux. OU déclencher via Coolify UI (UI semble plus patient avec le docker-compose underneath).
+
 ### Note — Kong Basic Auth au-devant de Studio
 
 - Username : `hmadmin` (aligné avec user Authentik)
