@@ -85,7 +85,7 @@ app.*       → tables applicatives (tenants, profiles, entites, audit_log, budg
 ### Sécurité (CRITIQUE — données financières HMA)
 - **MUST** activer RLS sur toutes les tables `marts.*` et `app.*`
 - **MUST** vérifier les permissions côté DB (RLS), pas seulement frontend
-- **MUST** exiger MFA TOTP pour les rôles `super_admin` et `admin`
+- **MUST** exiger MFA TOTP pour les rôles `admin`, `pdg` et `daf` (écriture sensible ou visibilité cross-entité)
 - **NEVER** stocker les rôles dans `user_metadata` Supabase (modifiable par user)
 - **NEVER** committer un fichier `.env.local` ou `.env.production`
 
@@ -118,11 +118,12 @@ app.*       → tables applicatives (tenants, profiles, entites, audit_log, budg
 - **MUST** passer pre-commit hook (lint + typecheck + tests unit) avant commit
 - **NEVER** committer directement sur `main` sans revue
 
-## Rôles utilisateurs (RBAC 4 niveaux)
-1. `super_admin` — Kiki (gestion users + tout accès)
-2. `admin` — direction HMA, DAF (lecture consolidée + admin users)
-3. `controleur` — contrôleur de gestion (R/W sur SA filiale)
-4. `consultant` — lecture seule limitée (expert-comptable externe)
+## Rôles utilisateurs (RBAC 5 niveaux)
+1. `admin` — Kiki, propriétaire plateforme (gestion users + tenants + entités + tout accès, cross-tenant en V2)
+2. `pdg` — dirigeant groupe HMA (lecture exécutive consolidée + détail par entité, aucune écriture data, peut commenter/valider)
+3. `daf` — directeur administratif & financier (lecture tout tenant + R/W budgets, imports CSV, commentaires)
+4. `manager` — gérant de filiale (R/W sur sa propre entité via `entite_id`, pas de cross-entité)
+5. `userview` — lecture externe limitée à son périmètre (expert-comptable externe, consultant audit) — exports CSV autorisés, aucune écriture
 
 ## Workflow de développement (Spec-Driven Development)
 Pour toute nouvelle feature non triviale (> 2 jours de dev) :
@@ -264,6 +265,6 @@ Actuellement tous à la racine (à déplacer vers `docs/` et `.specify/memory/` 
 - Référentiel comptable : `compta_analytique.md` (formules PCG — **source externe à importer**, pas encore dans le repo)
 
 ## Contacts projet
-- Propriétaire produit : Kiki (super_admin)
+- Propriétaire produit : Kiki (rôle `admin`)
 - Cible utilisateurs MVP : 3 personnes HMA (Kiki, gérant, gestionnaire)
 - Ambition commerciale : PME ultra-marines (Guyane, Antilles, Réunion)
