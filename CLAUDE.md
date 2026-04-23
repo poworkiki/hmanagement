@@ -4,10 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # hmanagement — Contexte projet Claude Code
 
-## État du dépôt (Sprint 0)
-À ce jour, le repo ne contient **que des documents de cadrage à la racine** : `CLAUDE.md`, `README.md`, `constitution.md`, `SKILL.md` (contenu de la skill `hma-context`), `CDC-v0.2-hmanagement.md`, `synthese-executive.md`, `credentials-stack-hma.md`. **Aucun code applicatif, aucun `package.json`, aucun `dbt_project.yml`, aucun répertoire `supabase/` n'existe encore.** Les commandes ci-dessous (npm, dbt, supabase) et la structure `.claude/skills/`, `.specify/memory/`, `docs/` sont l'**état cible** prévu pour la fin de Sprint 0 / début Sprint 1 — pas à exécuter tant que le scaffolding n'est pas en place.
+## État du dépôt (avril 2026)
 
-Le prochain travail concret attendu est l'installation de Supabase self-hosted sur Coolify, via le workflow Spec Kit (voir `README.md` section « Sprint 1 à suivre »).
+**Feature `001-supabase-selfhost` — Phases 1→5 LIVE.**
+
+- ✅ Spec-Kit v0.7.2 installé (`.specify/`, `.claude/skills/speckit-*/`)
+- ✅ Constitution v0.2.0 dans `.specify/memory/constitution.md`
+- ✅ Scaffolding infra : `infra/supabase/` (scripts + config) + `docs/runbooks/` (5 runbooks) + `docs/adr/` (ADR-001)
+- ✅ **Supabase self-hosted LIVE** sur `https://supabase.hma.business` (12 containers healthy, PG 15.8, GoTrue v2.186, PostgREST 14.6)
+- ✅ **Authentik OIDC delegation active** — user `hmadmin` avec TOTP MFA, login flow validé
+- ✅ **Backups R2 cron actif** — quotidien 03h30 UTC + drill mensuel + disk-alert 15 min (1er backup + 1er drill OK)
+- ✅ **13 secrets Vaultwarden** chiffrés dans org `stack_hma` (préfixe `supabase-selfhost-*` + `authentik-hmadmin-password` + Coolify API)
+- ✅ Cold-storage papier de `RESTIC_PASSWORD` effectué
+- 📍 Branche active : `001-supabase-selfhost` (12+ commits, Phase 6/7/8 restants : API smoke-test, monitoring Uptime Kuma, polish + PR main)
+- 📍 Prochaine feature : `002-schemas-rls-bootstrap` (schémas `raw/staging/marts/app` + RLS policies + rôles DB + `app.tenants/profiles/audit_log`)
+
+**NON encore présent** dans le repo : `package.json` (Next.js), `dbt_project.yml`, `supabase/` (CLI), `e2e/`. Ces arrivent avec features 003+ (app), 004+ (pipelines), 005+ (dbt marts).
 
 ## Projet
 **hmanagement** — Dashboard financier DAF/CFO pour le groupe HMA (holding familiale en Guyane française), avec stratégie de pivot vers SaaS multi-tenant pour PME ultra-marines.
@@ -114,32 +126,109 @@ Pour toute nouvelle feature non triviale (> 2 jours de dev) :
 
 Voir `.specify/memory/constitution.md` pour les principes non négociables.
 
-## Commandes projet courantes
-> ⚠️ **Aspirationnel pour l'instant** — ces commandes ne fonctionneront qu'après le scaffolding Sprint 1 (Next.js init, `supabase init`, `dbt init`). Ne pas les lancer sur le repo en l'état.
+## Infrastructure HMA (référence stable — non versionnée mais requise)
+
+| Ressource | Adresse | Usage | Managé par |
+|---|---|---|---|
+| VPS Hostinger principal | `187.124.150.82` (SSH alias `hma`) | Coolify, Supabase, n8n, Authentik | Hostinger |
+| VPS secondaire | `168.231.69.226` | Legacy, migration progressive | Hostinger |
+| Coolify | `coolify.hma.business` | Orchestrateur Docker (admin `hmadmin`) | Coolify self-hosted |
+| Traefik (reverse-proxy) | container `coolify-proxy` sur VPS | HTTPS + Let's Encrypt pour toutes les apps | livré par Coolify |
+| Vaultwarden | `vaultwarden.poworkiki.cloud` | Source de vérité secrets, org `stack_hma` | self-hosted perso |
+| Authentik (IdP SSO) | `auth.hma.business` — **standalone docker-compose** à `/opt/authentik/`, **hors Coolify** | Délégation OIDC pour Supabase + n8n. User live : `hmadmin` (pas `akadmin` qui est un outpost service account) | docker-compose standalone |
+| n8n | `n8n.hma.business` | Orchestration workflows (Pennylane à venir) | Coolify |
+| Uptime Kuma | `status.hma.business` | Monitoring disponibilité + alerte cert TLS | Coolify |
+| Cloudflare | DNS zone `hma.business` + R2 bucket `hma-supabase-backups` | DNS, TLS validation, object storage chiffré restic | SaaS CF |
+| Supabase (feature 001) | `supabase.hma.business` | DB + Auth + REST + Studio (12 containers) | Coolify template |
+
+**Détail complet des secrets** : `credentials-stack-hma.md` (non commité, local à la racine) — **jamais dans git**.
+
+## Patterns Vaultwarden — gestion des secrets
+
+Source de vérité : `https://vaultwarden.poworkiki.cloud` org **`stack_hma`**. Tous les secrets projet sont préfixés par namespace (ex. `supabase-selfhost-*`, `authentik-hmadmin-*`).
+
+### Automatisation (lecture + écriture chiffrée)
+
+Le dépôt sibling **`/c/HMAGESTION_STACK/scripts/`** expose :
+
+- `vw-crypto.py` — Python client qui gère le chiffrement côté client (password-based login → clé utilisateur → clé d'org via RSA → AES-256-CBC + HMAC), cible l'org `stack_hma` par défaut (UUID `f7bd1540-c6ed-45fb-8e8e-3ca9a9d9db23` hardcodé)
+- `vw-secret.sh` — wrapper bash (lecture seule) : `get <name>`, `list [filter]`, `export <name> <VAR>`
+- `vw-add.sh` — wrapper bash pour écriture non-chiffrée (⚠️ à éviter — items invisibles dans l'UI Bitwarden/Vaultwarden car pas chiffrés)
+
+**Toujours privilégier `vw-crypto.py`** pour les écritures dans l'org partagée.
+
+### Pattern d'orchestrateur single-session (anti rate-limit)
+
+Vaultwarden a un rate-limit sur `/identity/connect/token` (~5 logins/30s). Un script qui fait plusieurs opérations doit **ouvrir UNE seule session** :
+
+```python
+import importlib.util
+spec = importlib.util.spec_from_file_location("vw_crypto", "/c/HMAGESTION_STACK/scripts/vw-crypto.py")
+vw = importlib.util.module_from_spec(spec); spec.loader.exec_module(vw)
+
+env = vw.load_env()
+session = vw.get_session(env)              # UN SEUL login
+ciphers = session.fetch_ciphers(vw.ORG_ID) # UN SEUL fetch
+# puis boucler sur ciphers, upserts multiples avec session.access_token
+```
+
+### Pattern zero-leak pour handoff de secrets
+
+Quand le user doit fournir une valeur sensible (ex. un token fraichement généré dans Coolify UI) :
+
+```
+1. Créer un fichier .env hors repo : C:\Users\gabin\secret-tmp.env
+2. User le remplit dans Notepad local, sauvegarde
+3. Script lit le fichier (Read tool → contenu en context mais au moins user ne l'a pas collé dans le chat)
+4. Script store dans Vaultwarden via vw-crypto.py
+5. Script DELETE le fichier local
+```
+
+**JAMAIS** :
+- Demander au user de coller un secret dans le chat (transcript persisté côté Anthropic)
+- Echo le secret dans une sortie bash (tool output est loggé)
+- Committer un fichier avec des valeurs secrètes (même test/dev)
+
+### Live services ops — commandes réelles
 
 ```bash
-# Développement local
-npm run dev                                    # Next.js en local
-npm run lint                                   # ESLint
-npm run typecheck                              # TypeScript
-npm run test:unit                              # Vitest unitaires
-npm run test:integration                       # Vitest intégration
-npm run test:e2e                               # Playwright E2E
+# Supabase (déployé, live)
+ssh hma 'docker ps --format "{{.Names}}" | grep supabase'      # état containers
+ssh hma 'sudo /usr/local/bin/pg-backup.sh'                     # backup manuel
+ssh hma 'sudo /usr/local/bin/pg-restore-drill.sh'              # drill restauration
+ssh hma 'sudo tail -50 /var/log/supabase-backup.log'           # logs backup
 
-# dbt (dans le container)
-dbt run --select state:modified+               # run modèles modifiés
-dbt test --select state:modified+              # tests modèles modifiés
-dbt docs generate && dbt docs serve            # documentation
+# Vaultwarden programmatique
+python3 /c/HMAGESTION_STACK/scripts/vw-crypto.py set "name" "user" "pw" "uri"
+bash /c/HMAGESTION_STACK/scripts/vw-secret.sh get "secret name"
+bash /c/HMAGESTION_STACK/scripts/vw-secret.sh list [filter]
 
-# Supabase self-hosted
-supabase db diff                               # diff migrations
-supabase migration new <nom>                   # nouvelle migration
-supabase db push                               # appliquer migrations
-
-# Spec Kit
-/speckit.constitution                          # voir/éditer constitution
-/speckit.specify                               # nouvelle spec feature
+# Spec-Kit (feature workflow)
+/speckit-specify    # nouvelle feature
+/speckit-clarify    # résoudre ambiguïtés
+/speckit-plan       # plan technique (⚠️ DESTRUCTIF sur feature existante, voir doc)
+/speckit-tasks      # décomposer (⚠️ DESTRUCTIF sur feature existante)
+/speckit-analyze    # quality gate read-only
+/speckit-implement  # exécution
+/speckit-checklist  # checklist requirements quality ("unit tests for English")
 ```
+
+### Aspirationnel (futures features)
+
+```bash
+npm run dev / lint / typecheck / test:*        # Next.js — feature 003+
+dbt run / test / docs                          # dbt — feature 006+
+supabase db diff / migration new / push        # Supabase CLI — feature 002+
+```
+
+## Pièges Coolify documentés
+
+4 traps réels capturés dans `docs/runbooks/supabase-deploy.md` (utile pour toute future app déployée via Coolify, pas seulement Supabase) :
+
+1. **Coolify regénère JWT/API keys** si env vars laissées vides au deploy → re-sync Vaultwarden obligatoire après
+2. **Changer `POSTGRES_DB` sans wiper le volume** = containers restart-loop (permissions denied) → wipe volume + redeploy
+3. **Suffix container change à chaque recreate** (`supabase-db-<random>`) → `/etc/supabase-backup/env` à mettre à jour
+4. **Stop+start via API peut laisser des containers en état `Created`** → rescue manuel `docker start <name>` × N
 
 ## Style de communication attendu
 - Langue : **français** pour commentaires, docs, messages commits métier
