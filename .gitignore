@@ -5,6 +5,10 @@
 *.pem
 *.key
 
+# Fichier d'inventaire local des creds (jamais committé, cf. CLAUDE.md)
+credentials-stack-hma.md
+credentials-*.md
+
 # ── Node / Next.js ───────────────────────────────────────
 node_modules/
 .next/
