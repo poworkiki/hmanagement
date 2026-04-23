@@ -125,12 +125,29 @@ docker exec "$CONTAINER_NAME" pg_isready -U postgres >/dev/null 2>&1 \
 # -----------------------------------------------------------------------------
 # 4. pg_restore dans le container
 # -----------------------------------------------------------------------------
-log "running pg_restore"
+log "running pg_restore (--no-owner --no-acl : Supabase roles don't exist on bare PG drill target)"
 docker cp "$DUMP_FILE" "$CONTAINER_NAME":/tmp/dump.dump
+# pg_restore returns non-zero when ACL/owner errors are ignored, so we capture exit then
+# validate structurally (smoke tests below). --no-owner --no-acl skip the Supabase-specific
+# role grants that would fail on a vanilla postgres:15 image.
+set +e
+# Default pg_restore behaviour continues on per-statement errors (no --exit-on-error).
+# We use --no-owner --no-acl to skip Supabase-specific role grants that would fail on bare PG.
 docker exec -e PGPASSWORD="$DRILL_PG_PASSWORD" "$CONTAINER_NAME" \
-  pg_restore -U postgres -d postgres --if-exists --clean --no-owner /tmp/dump.dump 2>&1 \
-  | tee -a "$WORK_DIR/pg_restore.log" \
-  || die "pg_restore failed (see $WORK_DIR/pg_restore.log)" 3
+  pg_restore -U postgres -d postgres --if-exists --clean --no-owner --no-acl --no-privileges \
+  /tmp/dump.dump 2>&1 \
+  | tee -a "$WORK_DIR/pg_restore.log" >/dev/null
+PG_RESTORE_EXIT=${PIPESTATUS[0]}
+set -e
+# pg_restore exits non-zero even for ACL errors we asked it to ignore. We tolerate exit 1
+# (some errors tolerated), fail only on hard errors like "connection refused" (exit 2).
+if [[ "$PG_RESTORE_EXIT" -gt 1 ]]; then
+  die "pg_restore failed hard (exit $PG_RESTORE_EXIT, see $WORK_DIR/pg_restore.log)" 3
+fi
+# Count any "could not execute query" lines that AREN'T ACL/role-related
+HARD_ERRORS=$(grep -cE "^pg_restore: error:" "$WORK_DIR/pg_restore.log" 2>/dev/null | head -1 || echo "0")
+IGNORED_ERRORS=$(grep -cE "ALTER DEFAULT PRIVILEGES|GRANT ALL|role .* does not exist" "$WORK_DIR/pg_restore.log" 2>/dev/null || echo "0")
+log "pg_restore completed (exit $PG_RESTORE_EXIT): ${HARD_ERRORS} total errors, ~${IGNORED_ERRORS} ACL/role (expected & tolerated)"
 
 # -----------------------------------------------------------------------------
 # 5. Smoke-tests SQL

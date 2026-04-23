@@ -16,7 +16,7 @@ Une ligne par drill (auto ou manuel). Colonnes :
 
 | Date | Type | Snapshot ID | Durée | Résultat | Opérateur | Notes |
 |---|---|---|---|---|---|---|
-| _(à remplir après le 1er drill T078)_ | _manual_ | _–_ | _–_ | _–_ | _Kiki_ | Bootstrap initial |
+| 2026-04-23 05:11 UTC | manual | `cbfe7451` | 9 s | ✅ OK | Kiki + Claude | Bootstrap — 11 user schemas, 174 relations. Besoin d'avoir patch `--no-owner --no-acl` (Supabase roles absents sur postgres:15 vanilla). |
 
 ## Anomalies connues
 
@@ -28,5 +28,5 @@ Rien à signaler pour le moment.
 
 | Mois | Drill auto (1er) | Drill manuel supplémentaire ? | Couverture respectée ? |
 |---|---|---|---|
-| 2026-04 | _pending_ | _–_ | _–_ |
-| 2026-05 | _pending_ | _–_ | _–_ |
+| 2026-04 | _n/a — bootstrap en cours de mois_ | ✅ 2026-04-23 drill manuel bootstrap | ✅ |
+| 2026-05 | _pending auto 2026-05-01 05:00 UTC_ | _–_ | _–_ |
