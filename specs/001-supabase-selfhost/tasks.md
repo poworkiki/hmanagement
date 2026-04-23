@@ -33,13 +33,13 @@ description: "Task list for feature 001-supabase-selfhost"
 
 **Purpose** : initialiser l'arborescence repo et l'outillage local requis pour toutes les US.
 
-- [ ] T001 [P] Créer l'arborescence `infra/supabase/` avec `README.md` pointeur vers `specs/001-supabase-selfhost/quickstart.md`
-- [ ] T002 [P] Créer l'arborescence `infra/supabase/backups/` (vide, prête à accueillir les scripts)
-- [ ] T003 [P] Créer l'arborescence `infra/supabase/monitoring/` (vide)
-- [ ] T004 [P] Créer l'arborescence `docs/runbooks/` avec un `README.md` index
-- [ ] T005 [P] Créer l'arborescence `docs/adr/` avec un `README.md` expliquant le format ADR utilisé (MADR light)
-- [ ] T006 [P] Ajouter à `.gitignore` les motifs sensibles : `*.env.local`, `*.env.production`, `*.backup`, `restic-cache/`, `*.sql.gz` (protection secrets Art. 4.5)
-- [ ] T007 Rédiger l'ADR `docs/adr/ADR-001-supabase-self-hosted-via-coolify.md` consignant la décision de déployer Supabase self-hosted sur Coolify (résumé du `research.md` R-001, R-002, R-003)
+- [x] T001 [P] Créer l'arborescence `infra/supabase/` avec `README.md` pointeur vers `specs/001-supabase-selfhost/quickstart.md`
+- [x] T002 [P] Créer l'arborescence `infra/supabase/backups/` (vide, prête à accueillir les scripts)
+- [x] T003 [P] Créer l'arborescence `infra/supabase/monitoring/` (vide)
+- [x] T004 [P] Créer l'arborescence `docs/runbooks/` avec un `README.md` index
+- [x] T005 [P] Créer l'arborescence `docs/adr/` avec un `README.md` expliquant le format ADR utilisé (MADR light)
+- [x] T006 [P] Ajouter à `.gitignore` les motifs sensibles : `*.env.local`, `*.env.production`, `*.backup`, `restic-cache/`, `*.sql.gz` (protection secrets Art. 4.5)
+- [x] T007 Rédiger l'ADR `docs/adr/ADR-001-supabase-self-hosted-via-coolify.md` consignant la décision de déployer Supabase self-hosted sur Coolify (résumé du `research.md` R-001, R-002, R-003)
 
 ---
 
@@ -51,45 +51,60 @@ description: "Task list for feature 001-supabase-selfhost"
 
 ### 2.1 DNS & domaine
 
-- [ ] T010 [UI Cloudflare] Créer l'enregistrement DNS type `A` : `supabase.hma.business` → `187.124.150.82`, mode "DNS only" (proxy désactivé). Vérification : `dig supabase.hma.business +short` renvoie l'IP du VPS.
+- [x] T010 [UI Cloudflare] Créer l'enregistrement DNS type `A` : `supabase.hma.business` → `187.124.150.82`, mode "DNS only" (proxy désactivé). Vérification : `dig supabase.hma.business +short` renvoie l'IP du VPS.
 
 ### 2.2 Cloudflare R2 pour sauvegardes
 
-- [ ] T011 [UI Cloudflare] Créer le bucket R2 `hma-supabase-backups` (région EU automatique). Activer object lifecycle optionnel : rien à configurer, restic gère la rétention.
-- [ ] T012 [UI Cloudflare] Générer un jeu d'API R2 à scope **restreint au bucket `hma-supabase-backups`** (Read+Write). Récupérer `Access Key ID`, `Secret Access Key`, `Account ID`.
-- [ ] T013 [UI Vaultwarden] Créer les 3 secrets correspondants : `supabase-selfhost-r2-account-id`, `supabase-selfhost-r2-access-key-id`, `supabase-selfhost-r2-secret-access-key` dans l'org `stack_hma`.
+- [x] T011 [UI Cloudflare] Créer le bucket R2 `hma-supabase-backups` (région EU automatique). Activer object lifecycle optionnel : rien à configurer, restic gère la rétention.
+- [x] T012 [UI Cloudflare] Générer un jeu d'API R2 à scope **restreint au bucket `hma-supabase-backups`** (Read+Write). Récupérer `Access Key ID`, `Secret Access Key`, `Account ID`.
+- [x] T013 [UI Vaultwarden] Créer les 3 secrets correspondants : `supabase-selfhost-r2-account-id`, `supabase-selfhost-r2-access-key-id`, `supabase-selfhost-r2-secret-access-key` dans l'org `stack_hma`.
 
 ### 2.3 ~~Compte SMTP (Brevo)~~ → **Authentik OIDC (délégation auth)**
 
 > **Clarification /speckit-clarify 2026-04-22** : T014-T017 supprimés. L'authentification est déléguée à l'IdP Authentik existant (`auth.hma.business`) qui gère déjà son propre SMTP. Remplacés par T014-T017 configuration OIDC ci-dessous.
 
-- [ ] T014 [UI Authentik] Se connecter à `https://auth.hma.business` → **Applications → + Create** → nouvelle app `supabase-hma`. Noter le `client_id` et générer le `client_secret` (usage `GOTRUE_EXTERNAL_KEYCLOAK_SECRET`).
-- [ ] T015 [UI Authentik] Configurer le **Provider OAuth2/OIDC** de l'app : Redirect URI = `https://supabase.hma.business/auth/v1/callback`, scopes = `openid email profile`, JWT signing alg = RS256 (par défaut Authentik).
-- [ ] T016 [UI Authentik] Créer/assigner un **groupe Authentik** `supabase-hma-admins` (ou équivalent) avec **policy MFA TOTP obligatoire** (`is_mfa_enforced`). Inviter au minimum le compte super-admin cible. FR-007 enforcé ici, pas dans GoTrue.
-- [ ] T017 [UI Vaultwarden] Créer les 2 secrets OIDC dans stack_hma : `supabase-selfhost-oidc-client-id` (valeur = client_id Authentik) et `supabase-selfhost-oidc-client-secret` (valeur = client_secret). URL d'Authentik `https://auth.hma.business/application/o/supabase-hma/` est valeur publique (→ `env.reference`).
+- [x] T014 [API Authentik] ~~UI~~ Créer via API REST la Provider OAuth2/OIDC `supabase-hma-provider` + Application `supabase-hma` (slug). `client_id` et `client_secret` générés automatiquement. ✅ Fait 2026-04-22 via script idempotent.
+- [x] T015 [API Authentik] ~~UI~~ Configurer via API : Redirect URI = `https://supabase.hma.business/auth/v1/callback`, scopes = `openid email profile`, authorization/authentication/invalidation flows = défauts, signing key = authentik Self-signed.
+- [x] T016 [API Authentik] Créer groupe `supabase-hma-admins` via API. **Note** : policy MFA n'est pas bindée spécifiquement au groupe — la stage `default-authentication-mfa-validation` (ordre 30) dans `default-authentication-flow` enforce MFA **globalement** sur toute auth Authentik (acceptable MVP car seul user humain actif = hmadmin dans le groupe).
+- [x] T017 [API Vaultwarden] Stocker `supabase-selfhost-oidc-client-id` + `supabase-selfhost-oidc-client-secret` (chiffrés, org `stack_hma`) via `vw-crypto.py`.
+- [x] T017.1 [BONUS non prévu] Créer user Authentik `hmadmin` (email `hmagestion@gmail.com`, type `internal`), assigné au groupe `supabase-hma-admins`, avec password initial 32 chars stocké dans Vaultwarden `authentik-hmadmin-password`. `akadmin` original est en fait un service account outpost Authentik (non modifiable via API).
+- [x] T017.2 [manuel UI] Enrôlement TOTP de `hmadmin` via Microsoft Authenticator (QR code Authentik → Microsoft Authenticator → code 6 chiffres). **Vérifié par API** : 1 device TOTP `confirmed=true`, login incognito avec TOTP challenge validé.
 
 ### 2.4 Secrets Supabase dans Vaultwarden
 
-- [ ] T018 [P] [UI Vaultwarden] Générer et stocker `supabase-selfhost-jwt-secret` (40+ caractères aléatoires, `openssl rand -hex 32`).
-- [ ] T019 [P] [UI Vaultwarden] Générer et stocker `supabase-selfhost-anon-key` (JWT signé avec `JWT_SECRET`, claim `role=anon`, exp longue). Utiliser le tool officiel Supabase `supabase gen anon-key` ou équivalent.
-- [ ] T020 [P] [UI Vaultwarden] Générer et stocker `supabase-selfhost-service-role-key` (JWT signé, claim `role=service_role`).
-- [ ] T021 [P] [UI Vaultwarden] Générer et stocker `supabase-selfhost-postgres-password` (≥ 32 chars).
-- [ ] T022 [P] [UI Vaultwarden] Générer et stocker `supabase-selfhost-dashboard-password` (≥ 24 chars).
-- [ ] T023 [P] [UI Vaultwarden] Générer et stocker `supabase-selfhost-restic-password` (≥ 40 chars, sauvegardée aussi hors Vaultwarden pour disaster recovery — cf. runbook).
+- [x] T018 [P] [API Vaultwarden] Générer et stocker `supabase-selfhost-jwt-secret` (64 chars hex, `secrets.token_hex(32)`).
+- [x] T019 [P] [API Vaultwarden] Générer et stocker `supabase-selfhost-anon-key` (JWT HS256 signé avec JWT_SECRET, claim `role=anon`, exp +10 ans).
+- [x] T020 [P] [API Vaultwarden] Générer et stocker `supabase-selfhost-service-role-key` (JWT HS256 signé, claim `role=service_role`).
+- [x] T021 [P] [API Vaultwarden] Générer et stocker `supabase-selfhost-postgres-password` (32 chars alphanum).
+- [x] T022 [P] [API Vaultwarden] Générer et stocker `supabase-selfhost-dashboard-password` (24 chars).
+- [x] T023 [P] [API Vaultwarden] Générer et stocker `supabase-selfhost-restic-password` (80 chars hex, `secrets.token_hex(40)`). **Cold storage papier à faire séparément, cf. T023.5.**
 - [ ] T023.5 🔴 [GATE] [UI Vaultwarden + action physique] **Cold storage `supabase-selfhost-restic-password`** — récupérer la valeur via Vaultwarden UI, la recopier sur **papier** dans un coffre physique (≥ 1 copie) et conserver une **2e copie** chez un tiers de confiance (notaire, proche). Couverture : FR-015 + ADR-001 §conséquences. **BLOQUE T076** : aucun backup production ne doit démarrer sans que la clé de chiffrement ait sa copie cold storage (sinon perte Vaultwarden + PG simultanée = backups illisibles).
 
 ### 2.5 ~~Canal Telegram (création nouveau chat)~~ → **Réutilisation chat existant**
 
 > **Clarification /speckit-clarify 2026-04-22** : T024 supprimée (pas de nouveau chat), T025 simplifiée en récupération du chat_id du canal Telegram HMA existant dans lequel `hmagents_bot` envoie déjà les notifications (n8n, Authentik).
 
-- [ ] T025 [UI Vaultwarden] Récupérer le `chat_id` du chat Telegram HMA existant (source possibles : notes du secret `Telegram Bot — HMAGENTS` si déjà renseigné, sinon via `https://api.telegram.org/bot<TOKEN>/getUpdates` exécuté une fois après envoi d'un message quelconque au bot). Stocker dans un nouveau secret `supabase-selfhost-telegram-chat-id`. Préfixes `[supabase-backup]` / `[restore-drill]` / `[disk-alert]` dans les scripts évitent la confusion avec les autres sources.
+- [x] T025 [API Vaultwarden] Chat_id `1450627120` (DM privé poworkiki + hmagents_bot) récupéré via `getUpdates` et stocké chiffré dans stack_hma. **Test live validé 2026-04-22** : message envoyé depuis API Telegram → reçu sur mobile Kiki.
 
 ### 2.6 Reference de configuration versionnée (publique)
 
-- [ ] T026 Créer `infra/supabase/env.reference` avec **uniquement** les variables 📄 (publiques) de `contracts/platform-env-contract.md` (domain, TTLs, rate-limits, etc.) — aucune valeur secrète. Utilisateur final injectera les ✅ via Coolify UI.
-- [ ] T027 Créer `infra/supabase/gotrue-config-overrides.yml` documentant les overrides GoTrue décidés dans `research.md` R-007 + R-011 : `DISABLE_SIGNUP=true`, `MAILER_AUTOCONFIRM=false`, `JWT_EXP=3600`, `EXTERNAL_EMAIL_ENABLED=false` (on désactive Magic Link natif car auth passe par OIDC), **`EXTERNAL_KEYCLOAK_ENABLED=true`** (Authentik compatible), `EXTERNAL_KEYCLOAK_URL=https://auth.hma.business/application/o/supabase-hma/`, `EXTERNAL_KEYCLOAK_REDIRECT_URI=https://supabase.hma.business/auth/v1/callback`, `SITE_URL`. Rate-limits sont reportés vers Authentik (policies dédiées) — la surface GoTrue exposée devient minimale. Vérifier les noms exacts côté version GoTrue du template Coolify (alias possible : `EXTERNAL_CUSTOM_*` selon version).
+- [x] T026 Créer `infra/supabase/env.reference` avec **uniquement** les variables 📄 (publiques) — fait, committé, mis à jour post-OIDC.
+- [x] T027 Créer `infra/supabase/gotrue-config-overrides.yml` documentant les overrides GoTrue — fait, committé, v2 avec section OIDC Authentik.
 
-**Checkpoint Phase 2** : DNS résout, bucket R2 prêt, 11 secrets Vaultwarden en place (9 Supabase-direct + 2 OIDC Authentik), chat Telegram existant identifié, app OAuth Authentik créée. **Les 5 user stories peuvent démarrer en parallèle à partir d'ici** (capacité équipe ≥ 2).
+**Checkpoint Phase 2** — État au 2026-04-23 :
+- ✅ DNS `supabase.hma.business` → `187.124.150.82` DNS-only
+- ✅ Bucket R2 `hma-supabase-backups` + token API scopé (rotate post-leak T075.5)
+- ✅ **12 secrets Vaultwarden** chiffrés dans stack_hma :
+  - 3 R2 (account-id, access-key-id, secret-access-key)
+  - 6 Supabase (jwt, anon-key, service-role-key, postgres-pwd, dashboard-pwd, restic-pwd)
+  - 2 OIDC Authentik (client-id, client-secret)
+  - 1 Telegram chat-id
+  + bonus `authentik-hmadmin-password` (32 chars)
+- ✅ Authentik : Provider `supabase-hma-provider`, App `supabase-hma`, Group `supabase-hma-admins`, User `hmadmin` avec TOTP MFA enrollé + validé
+- ✅ Canal Telegram live-testé (chat_id `1450627120`)
+- ⏳ **T023.5 cold storage papier `RESTIC_PASSWORD`** — unique gate restant avant T076
+
+**Les 5 user stories peuvent démarrer à partir d'ici** (capacité équipe ≥ 2). US3 (backups) reste bloquée par T023.5 avant T076.
 
 ---
 
