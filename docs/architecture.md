@@ -197,7 +197,7 @@ CREATE TYPE app.user_role AS ENUM (
   'pdg',        -- dirigeant groupe, lecture exécutive
   'daf',        -- finance ops (budgets, imports)
   'manager',    -- gérant de filiale, scope entite_id
-  'userview'    -- lecture externe (expert-compta, consultant audit)
+  'userview'    -- collaborateur interne lecture seule (stagiaire, assistant, auditeur interne)
 );
 ```
 
@@ -207,12 +207,13 @@ CREATE TYPE app.user_role AS ENUM (
 | `pdg` | Consolidé groupe + toutes entités du tenant | Commentaires, validations (pas la data brute) | Dirigeant groupe HMA |
 | `daf` | Tout son tenant + détails | Budgets, commentaires, imports CSV | Directeur administratif & financier |
 | `manager` | Sa filiale via `entite_id` | Budget de sa filiale, commentaires | Gérant STIVMAT / STA / ETPA |
-| `userview` | Sa filiale (périmètre donné), lecture seule | Rien (exports CSV autorisés) | Expert-comptable externe, consultant audit |
+| `userview` | Sa filiale (périmètre donné), lecture seule | Rien (exports CSV autorisés) | Collaborateur interne : stagiaire, assistant compta en formation, auditeur interne, employé temporaire |
 
 **Invariants** :
 - Les rôles ne sont **JAMAIS** dans `auth.users.user_metadata` (modifiable par le user). Lus uniquement via helper `app.current_role()` qui lit `app.profiles`.
 - MFA TOTP **obligatoire** pour `admin`, `pdg`, `daf` (écriture sensible ou visibilité cross-entité).
 - `manager` et `userview` sont **scopés par `entite_id`** (colonne sur `app.profiles`). Un manager ne voit JAMAIS une entité autre que la sienne.
+- **Tous les rôles sont INTERNES à l'organisation** en MVP. Aucun accès externe (expert-compta externe, auditeur tiers, consultant client) en scope MVP — sera traité en V2 via comptes dédiés avec périmètre strictement limité.
 
 ### 5.3 RLS — pattern canonique
 
