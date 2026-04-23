@@ -123,7 +123,7 @@ app.*       → tables applicatives (tenants, profiles, entites, audit_log, budg
 2. `pdg` — dirigeant groupe HMA (lecture exécutive consolidée + détail par entité, aucune écriture data, peut commenter/valider)
 3. `daf` — directeur administratif & financier (lecture tout tenant + R/W budgets, imports CSV, commentaires)
 4. `manager` — gérant de filiale (R/W sur sa propre entité via `entite_id`, pas de cross-entité)
-5. `userview` — lecture externe limitée à son périmètre (expert-comptable externe, consultant audit) — exports CSV autorisés, aucune écriture
+5. `userview` — collaborateur interne en lecture seule limitée à son périmètre (stagiaire, assistant compta en formation, auditeur interne, employé temporaire) — exports CSV autorisés, aucune écriture. **Périmètre strictement interne à l'organisation** : aucun accès externe (expert-compta externe, auditeur tiers, consultant client) en MVP — seront V2 via comptes dédiés si besoin.
 
 ## Workflow de développement (Spec-Driven Development)
 Pour toute nouvelle feature non triviale (> 2 jours de dev) :
