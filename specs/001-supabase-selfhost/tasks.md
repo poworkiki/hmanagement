@@ -240,7 +240,7 @@ description: "Task list for feature 001-supabase-selfhost"
 - [x] T146 Mettre à jour `CLAUDE.md` section "État du dépôt" : Sprint 1 jalon 1 complété, plateforme Supabase opérationnelle sur `supabase.hma.business`. ✅ 2026-04-23 — étendu pour refléter Phase 6 LIVE + SC-006 split + tâches restantes.
 - [x] T147 [VALID] Exécuter intégralement la checklist "smoke-test" de `quickstart.md` section 3 → tous les checks passent. ✅ 2026-04-23 — 5 checks : Studio 401 (Kong Basic Auth sain), PostgREST 200 avec apikey, GoTrue health JSON OK, 12 containers Up (11 healthy + rest Up), psql SELECT now() OK (PG 15.8). Quickstart section 3 corrigée pour documenter le 401 comme signal "auth enforced", pas panne.
 - [x] T149 [P] [VALID] (FR-022) Tester `disk-alert.sh` en abaissant temporairement le seuil à `1` dans le script (ou via variable d'environnement dédiée) et lancer `/usr/local/bin/disk-alert.sh` → confirmer qu'une notification Telegram "disk > threshold" est bien reçue. Restaurer le seuil à 80 %. ✅ 2026-04-23 — `sudo DISK_THRESHOLD=1 /usr/local/bin/disk-alert.sh` (env var ponctuel, seuil default 80% inchangé dans cron) → "disk usage 34% (threshold 1%) alert sent" → message Telegram confirmé reçu par user.
-- [ ] T148 Ouvrir une Pull Request de la branche `001-supabase-selfhost` vers `main` avec description pointant vers `specs/001-supabase-selfhost/` et demander la revue (Art. constitution 5.3).
+- [x] T148 Ouvrir une Pull Request de la branche `001-supabase-selfhost` vers `main` avec description pointant vers `specs/001-supabase-selfhost/` et demander la revue (Art. constitution 5.3). ✅ 2026-04-23 — PR #1 ouverte : https://github.com/poworkiki/hmanagement/pull/1
 
 ---
 
