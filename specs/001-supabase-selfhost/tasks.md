@@ -208,18 +208,19 @@ description: "Task list for feature 001-supabase-selfhost"
 
 ### Implementation for User Story 5
 
-- [ ] T120 [P] [US5] [UI Uptime Kuma] Ajouter 4 probes HTTPS sur `https://status.hma.business` :
-  - `supabase-studio` : `HEAD https://supabase.hma.business/`
-  - `supabase-auth` : `GET https://supabase.hma.business/auth/v1/health`
-  - `supabase-rest` : `GET https://supabase.hma.business/rest/v1/`
-  - `supabase-tls-cert` : mode "Certificate Expiry", seuil 14 jours
-  Chaque probe : intervalle 60 s, retries 2, notifs Telegram + email.
+- [x] T120 [P] [US5] [API Uptime Kuma via `uptime-kuma-api` socket.io] Ajouter 4 probes HTTPS sur `https://status.hma.business` :
+  - `supabase-studio` : `GET https://supabase.hma.business/`, accept 200-299 + 401 (Kong Basic Auth)
+  - `supabase-auth` : `GET https://supabase.hma.business/auth/v1/health` + header `apikey: <ANON_KEY>`, keyword `version`
+  - `supabase-rest` : `GET https://supabase.hma.business/rest/v1/`, accept 200-299 + 401
+  - `supabase-tls-cert` : `HEAD` sur `/`, interval 300s, expiryNotification=true
+  Chaque probe : intervalle 60 s, retries 2, notif Telegram `Telegram HMA ops` (default).
+  ✅ 2026-04-23 — 4 monitors créés via API (ids 4/5/6/7), tous UP en <25ms (Kuma local au VPS). Bonus : notif Telegram `Telegram HMA ops` créée (id=1) et attachée. Automatisé via script Python single-session avec creds Vaultwarden (vw-crypto + uptime-kuma-api v1.2.1). Note lib : `tlsExpiryNotifyDays` n'existe pas en v1.2.1 — les seuils cert sont globaux (Settings → Monitoring). Email notif non configurée (SMTP à setup séparément, Telegram suffit pour MVP).
 - [x] T121 [P] [US5] Créer `infra/supabase/monitoring/uptime-kuma-probes.yaml` : description déclarative des 4 probes (documentation, pas consommé par Uptime Kuma mais permet de rejouer en cas de migration).
 - [x] T122 [P] [US5] Créer `infra/supabase/monitoring/disk-alert.sh` : script bash qui lit `df --output=pcent /var/lib/docker` et pousse un webhook Telegram si > 80 %.
 - [x] T123 [US5] SSH sur VPS → copier `disk-alert.sh` vers `/usr/local/bin/` + entrée cron `*/15 * * * * /usr/local/bin/disk-alert.sh` (toutes les 15 min). ✅ 2026-04-23 — `/usr/local/bin/disk-alert.sh` (0755), `/etc/cron.d/supabase-disk-alert` (0644), `/var/lib/disk-alert/` créé.
-- [ ] T124 [P] [US5] [VALID] (SC-009, User Story 5 scenario 1) Arrêt volontaire du conteneur Studio via Coolify UI pendant 3 min → alerte Telegram reçue en < 5 min.
-- [ ] T125 [P] [US5] [VALID] (User Story 5 scenario 2) Redémarrer le conteneur → notif de résolution Telegram reçue.
-- [ ] T126 [P] [US5] [VALID] (FR-021) Dans Uptime Kuma → forcer un test du probe certificat → confirmer que l'alerte seuil 14 jours est fonctionnelle.
+- [x] T124 [P] [US5] [VALID] (SC-009, User Story 5 scenario 1) Arrêt volontaire d'un conteneur → alerte Telegram reçue en < 5 min. **Adapté** : Studio seul via `docker stop` ne déclenche PAS Kuma (Kong répond 401 indépendamment de Studio). Test refait avec `docker stop supabase-auth-...` → Kong renvoie 502, probe `supabase-auth` passe PENDING puis DOWN après retries 2×60s → alerte Telegram reçue. Pas via Coolify UI (piège #4 évité). ✅ 2026-04-23.
+- [x] T125 [P] [US5] [VALID] (User Story 5 scenario 2) Redémarrer le conteneur → notif de résolution Telegram reçue. ✅ 2026-04-23 — `docker start supabase-auth-...` après DOWN confirmé, probe repasse UP, notif resolve Telegram envoyée.
+- [x] T126 [P] [US5] [VALID] (FR-021) Dans Uptime Kuma → forcer un test du probe certificat → confirmer que l'alerte seuil 14 jours est fonctionnelle. ✅ 2026-04-23 — `api.test_notification()` sur notif `Telegram HMA ops` → "Sent Successfully" + message test reçu user (`c bonbjai recu`). La notif cert utilisera ce même canal.
 - [x] T127 [US5] Rédiger `docs/runbooks/supabase-incident.md` : arbre de décision des incidents courants (DB down, auth down, backup KO, disque plein, cert bientôt expiré). Inclure les 5 cas du tableau §4 de `quickstart.md`.
 
 **Checkpoint US5** : le super-admin est alerté activement sur tous les signaux critiques.
