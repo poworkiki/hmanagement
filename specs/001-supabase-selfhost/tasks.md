@@ -78,7 +78,7 @@ description: "Task list for feature 001-supabase-selfhost"
 - [x] T021 [P] [API Vaultwarden] Générer et stocker `supabase-selfhost-postgres-password` (32 chars alphanum).
 - [x] T022 [P] [API Vaultwarden] Générer et stocker `supabase-selfhost-dashboard-password` (24 chars).
 - [x] T023 [P] [API Vaultwarden] Générer et stocker `supabase-selfhost-restic-password` (80 chars hex, `secrets.token_hex(40)`). **Cold storage papier à faire séparément, cf. T023.5.**
-- [ ] T023.5 🔴 [GATE] [UI Vaultwarden + action physique] **Cold storage `supabase-selfhost-restic-password`** — récupérer la valeur via Vaultwarden UI, la recopier sur **papier** dans un coffre physique (≥ 1 copie) et conserver une **2e copie** chez un tiers de confiance (notaire, proche). Couverture : FR-015 + ADR-001 §conséquences. **BLOQUE T076** : aucun backup production ne doit démarrer sans que la clé de chiffrement ait sa copie cold storage (sinon perte Vaultwarden + PG simultanée = backups illisibles).
+- [x] T023.5 [GATE] ✅ **Cold storage papier effectué 2026-04-23** (attestation Kiki). Gate levé, T076 peut désormais être exécuté sans risque de perte backups sur incident corrélé Vaultwarden + PG. **Rappel annuel** à programmer : test de transcription (rescanner la valeur papier → comparer avec Vaultwarden) + drill de restauration utilisant la copie papier au lieu de Vaultwarden. Prochaine échéance : 2027-04-23.
 
 ### 2.5 ~~Canal Telegram (création nouveau chat)~~ → **Réutilisation chat existant**
 
