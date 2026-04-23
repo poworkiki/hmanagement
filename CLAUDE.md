@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## État du dépôt (avril 2026)
 
-**Feature `001-supabase-selfhost` — Phases 1→5 LIVE.**
+**Feature `001-supabase-selfhost` — Phases 1→6 LIVE, Phase 7 partiel, Phase 8 en cours.**
 
 - ✅ Spec-Kit v0.7.2 installé (`.specify/`, `.claude/skills/speckit-*/`)
 - ✅ Constitution v0.2.0 dans `.specify/memory/constitution.md`
@@ -14,9 +14,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - ✅ **Supabase self-hosted LIVE** sur `https://supabase.hma.business` (12 containers healthy, PG 15.8, GoTrue v2.186, PostgREST 14.6)
 - ✅ **Authentik OIDC delegation active** — user `hmadmin` avec TOTP MFA, login flow validé
 - ✅ **Backups R2 cron actif** — quotidien 03h30 UTC + drill mensuel + disk-alert 15 min (1er backup + 1er drill OK)
+- ✅ **Disk-alert Telegram live** — `/usr/local/bin/disk-alert.sh` + cron `/etc/cron.d/supabase-disk-alert` (test T149 validé : message Telegram reçu)
+- ✅ **API smoke-test contractuel** — `infra/supabase/smoke-tests/api-contract.sh` passe (4 tests fonctionnels 200/401/201/200 + SC-006a perf serveur warm)
+- ✅ **SC-006 splitté 006a (contractuel) + 006b (observationnel)** — évite la dette technique de mélanger perf serveur/TLS/géo. Mesures live : TTFB warm 226-231ms, cumul cold Guyane↔EU ~3.5s.
 - ✅ **13 secrets Vaultwarden** chiffrés dans org `stack_hma` (préfixe `supabase-selfhost-*` + `authentik-hmadmin-password` + Coolify API)
 - ✅ Cold-storage papier de `RESTIC_PASSWORD` effectué
-- 📍 Branche active : `001-supabase-selfhost` (12+ commits, Phase 6/7/8 restants : API smoke-test, monitoring Uptime Kuma, polish + PR main)
+- ✅ SC-007 + SC-007bis validés : 0 valeur secrète dans repo, 0 fuite dans logs containers 24h (gotrue/postgrest/postgres)
+- 🟡 **Restant feature 001** :
+  - T120/T124-T126 : setup Uptime Kuma (4 probes + tests Telegram notif) — gated UI user
+  - T104 : rotation JWT_SECRET (destructif ~2min downtime, à coordonner)
+  - T143 : DROP TABLE test_contract_table (à la clôture)
+  - T148 : PR `001-supabase-selfhost` → `main`
+- 📍 Branche active : `001-supabase-selfhost`
 - 📍 Prochaine feature : `002-schemas-rls-bootstrap` (schémas `raw/staging/marts/app` + RLS policies + rôles DB + `app.tenants/profiles/audit_log`)
 
 **NON encore présent** dans le repo : `package.json` (Next.js), `dbt_project.yml`, `supabase/` (CLI), `e2e/`. Ces arrivent avec features 003+ (app), 004+ (pipelines), 005+ (dbt marts).

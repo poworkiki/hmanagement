@@ -94,25 +94,35 @@ Puis ouvrir `https://supabase.hma.business/` dans le navigateur :
 Check-list exécutable "sur le tas" pour valider que la plateforme est opérationnelle :
 
 ```bash
-# Depuis un poste exterieur
-curl -fsS https://supabase.hma.business/ | head -1                # Studio répond
-curl -fsS https://supabase.hma.business/rest/v1/                  # PostgREST répond
-curl -fsS https://supabase.hma.business/auth/v1/health            # GoTrue santé
+# Depuis un poste extérieur — Kong exige apikey sur /rest/* et /auth/*
+# Récupérer ANON_KEY via vw-secret.sh :
+eval "$(bash /c/HMAGESTION_STACK/scripts/vw-secret.sh export 'supabase-selfhost-anon-key' ANON_KEY)"
+
+curl -sS -o /dev/null -w "Studio HTTP %{http_code}\n" https://supabase.hma.business/
+# → attendu : 401 (Kong Basic Auth protège Studio UI — accessible seulement via hmadmin login)
+
+curl -sS -o /dev/null -w "PostgREST HTTP %{http_code}\n" -H "apikey: $ANON_KEY" https://supabase.hma.business/rest/v1/
+# → attendu : 200 (schema cache OpenAPI) ; 401 sans apikey
+
+curl -fsS -H "apikey: $ANON_KEY" https://supabase.hma.business/auth/v1/health
+# → attendu : JSON `{"version":"v2.186.0","name":"GoTrue",...}`
 
 # Depuis une session SSH sur le VPS
-ssh hma
-docker ps --format '{{.Names}}\t{{.Status}}' | grep -E 'supabase|postgres|gotrue|postgrest|studio'
+ssh hma 'docker ps --format "{{.Names}}\t{{.Status}}" | grep supabase'
+# → attendu : 12 containers, tous "Up ... (healthy)" sauf supabase-rest sans healthcheck
 
-# Tunnel SSH local
-# (depuis le poste admin, autre terminal)
-ssh -N -L 5433:localhost:5432 hma &
-psql "postgresql://postgres:${POSTGRES_PASSWORD}@localhost:5433/postgres" -c "SELECT now(), current_database();"
+# Requête psql (via docker exec, pas de tunnel SSH requis)
+ssh hma 'docker exec supabase-db-<SUFFIX> psql -U postgres -d postgres -c "SELECT now(), current_database(), version();"'
 ```
 
 Résultats attendus :
-- [ ] Les 3 `curl` renvoient 200 (ou 401 pour REST sans JWT — acceptable)
-- [ ] `docker ps` montre tous les conteneurs Supabase `Up`
-- [ ] La requête `psql` renvoie un horodatage et `postgres`
+- [ ] Studio root → **401** (Basic Auth Kong, c'est SAIN — signal que l'auth est enforced)
+- [ ] PostgREST avec apikey → **200** (sans apikey : 401, aussi OK)
+- [ ] GoTrue `/health` avec apikey → **JSON `{"version":...,"name":"GoTrue"}`**
+- [ ] `docker ps` montre 12 conteneurs Supabase `Up`, majoritairement `healthy`
+- [ ] `psql` renvoie un horodatage, `postgres`, `PostgreSQL 15.8`
+
+> **Note** : le code de statut `401` sur une URL sans apikey **n'est pas une panne** — c'est la preuve que Kong intercepte bien les routes et enforce l'authentification (Art. sécurité constitution). Une panne serait `502`, `503`, `504`, ou `connection refused`.
 
 ---
 
