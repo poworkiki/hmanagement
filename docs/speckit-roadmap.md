@@ -31,7 +31,7 @@ Pour **toute feature > 2 jours de dev**, toujours dans cet ordre :
 ```
 [001 Supabase self-hosted]  ← ✅ DONE (mergé 2026-04-23)
         ↓
-[002 Schémas + RLS bootstrap]   ← prochaine
+[002 Schémas + RLS bootstrap]   ← 🚧 EN COURS (spec + clarify done, plan à faire)
         ↓
 [003 Next.js app scaffold]
         ↓
@@ -58,18 +58,32 @@ Ordre déterminé par les dépendances : DB avant app, app avant data, data avan
 
 **But** : créer les 4 schémas Postgres `raw/staging/marts/app`, activer RLS partout, enum 5 rôles `admin/pdg/daf/manager/userview`, 4 tables applicatives de base (tenants, entites, profiles, audit_log).
 
-### 1. `/speckit-specify`
+**⚠️ État 2026-04-24** : spec et clarify **déjà effectués** sur la branche `002-schemas-rls-bootstrap`. **NE PAS relancer `/speckit-specify`** (écraserait la spec et ferait perdre les 5 clarifications intégrées). Reprendre directement à `/speckit-plan` (étape 3).
+
+### Clarifications déjà appliquées (session 2026-04-23 → 24)
+
+Les 5 décisions suivantes sont **intégrées dans `specs/002-schemas-rls-bootstrap/spec.md`** section `## Clarifications`. Toute relance du cycle doit en tenir compte :
+
+| # | Question | Décision |
+|---|---|---|
+| Q1 | Création `app.profiles` au 1er login OIDC | **Server Action feature 003** (pas trigger PG) — nouveau user → profile `actif=false`, `role=userview`, scope vide. Admin doit activer via UI feature 007. |
+| Q2 | Stratégie tests RLS | **pgTAP uniquement** (`supabase/tests/rls/*.sql` via `supabase test db`). Pas de Vitest/psql scripts. Tests TS arrivent en feature 003 sur service layer. |
+| Q3 | Bootstrap user admin `hmadmin` | **Migration dédiée `seed_admin_hmadmin.sql`** exécutée manuellement par l'opérateur APRÈS 1er login hmadmin. `UPDATE app.profiles SET role='admin', actif=true WHERE email='hmagestion@gmail.com'`. Idempotente. |
+| Q4 | Écritures rôle `pdg` | **Strict read-only MVP** — aucun INSERT/UPDATE/DELETE. Tables `commentaires`/`validations` **hors scope MVP** (reportées V1). Amender `docs/architecture.md §5.2` (retrait "Commentaires, validations" côté pdg). |
+| Q5 | Échec de migration en cours | **Transaction native Supabase CLI** par fichier + forward-only fix. Procédure recovery dans `docs/runbooks/db-schema.md`. Pas de script custom. |
+
+### 1. `/speckit-specify` ✅ FAIT — ne pas relancer
 
 ```
 /speckit-specify Créer dans Postgres (instance Supabase self-hosted sur supabase.hma.business) les 4 schémas applicatifs : raw (données brutes JSONB), staging (dbt cleanup), marts (vues analytiques finales), app (tables applicatives). Créer l'enum app.user_role avec les 5 rôles MVP : admin (propriétaire plateforme, tout accès, cross-tenant en V2), pdg (dirigeant groupe, lecture exécutive consolidée + détail), daf (finance ops R/W budgets et imports), manager (gérant filiale scope entite_id), userview (collaborateur interne lecture seule scopée — stagiaire, assistant compta en formation, auditeur interne, exports CSV autorisés, aucune écriture, aucun accès externe en MVP). Les rôles sont stockés dans app.profiles.role (JAMAIS dans auth.users.user_metadata). Créer les tables applicatives de base : app.tenants (multi-tenant-ready), app.entites (filiales avec tenant_id et entite_id), app.profiles (utilisateurs liés à auth.users + rôle + tenant_id + entite_id optionnel pour manager/userview), app.audit_log (traçabilité immutable append-only via trigger qui bloque UPDATE/DELETE). Activer RLS sur toutes les tables app.* et marts.* avec tenant_id NOT NULL partout. Les policies RLS doivent enforcer : (1) isolation par tenant_id pour tous, (2) accès cross-entité pour admin/pdg/daf, (3) scope entite_id pour manager/userview, (4) écritures limitées à admin/daf (budgets) et manager sur sa propre entité. MFA TOTP obligatoire pour admin/pdg/daf. Fournir migrations Supabase CLI versionnées, tests d'intégration RLS par rôle (5 tests minimum, 1 par rôle via SET LOCAL role et SET LOCAL request.jwt.claim.sub), et documentation dans docs/runbooks/db-schema.md. Scope MVP mono-tenant : 1 seul tenant créé au seed (slug 'hma'), 4 entités HMA (holding, ETPA, STA, STIVMAT), mais architecture prête pour multi-tenant sans refactor.
 ```
 
-### 2. `/speckit-clarify`
+### 2. `/speckit-clarify` ✅ FAIT (5/5 questions intégrées, voir tableau ci-dessus)
 ```
 /speckit-clarify
 ```
 
-### 3. `/speckit-plan`
+### 3. `/speckit-plan` ← **PROCHAINE ÉTAPE**
 ```
 /speckit-plan
 ```
@@ -110,7 +124,7 @@ Ordre déterminé par les dépendances : DB avant app, app avant data, data avan
 ### `/speckit-specify`
 
 ```
-/speckit-specify Initialiser l'application Next.js 15 App Router avec TypeScript mode strict, Tailwind CSS v4, shadcn/ui et Tremor pour les composants, TanStack Query v5 pour le data fetching, TanStack Table v8 pour les tables, React Hook Form + Zod pour les formulaires. Intégrer Supabase SSR (@supabase/ssr) pour l'auth côté client avec OIDC Authentik déjà configuré. Structure App Router : route group (admin) pour pages admin, (app) pour dashboard métier, layout drill-down 3 niveaux (groupe HMA → entité filiale → détail transaction). Server Components par défaut, Client Components uniquement où interactivité requise. Configurer Vitest + Testing Library + happy-dom pour unit/integration, Playwright pour E2E (5 parcours critiques min). ESLint + Prettier + Husky + lint-staged avec pre-commit hook (lint + typecheck + tests unit). Générer les types TypeScript depuis Supabase (supabase gen types typescript). Scope : pas encore de logique métier, juste le scaffold + layouts + login/logout fonctionnel + 1 page dashboard vide + 1 page admin vide.
+/speckit-specify Initialiser l'application Next.js 15 App Router avec TypeScript mode strict, Tailwind CSS v4, shadcn/ui et Tremor pour les composants, TanStack Query v5 pour le data fetching, TanStack Table v8 pour les tables, React Hook Form + Zod pour les formulaires. Intégrer Supabase SSR (@supabase/ssr) pour l'auth côté client avec OIDC Authentik déjà configuré. Structure App Router : route group (admin) pour pages admin, (app) pour dashboard métier, layout drill-down 3 niveaux (groupe HMA → entité filiale → détail transaction). Server Components par défaut, Client Components uniquement où interactivité requise. **Server Action `ensureProfile()` héritée de feature 002 (clarification Q1) exécutée au 1er login OIDC** : détecte `auth.users` sans ligne correspondante dans `app.profiles`, insère un profile avec `actif=false`, `role='userview'`, `tenant_id='hma'`, `entite_id=NULL` ; le middleware Next.js bloque ensuite l'accès tant que `actif=false` avec message "Compte en attente d'activation par un admin". Configurer Vitest + Testing Library + happy-dom pour unit/integration, Playwright pour E2E (5 parcours critiques min). ESLint + Prettier + Husky + lint-staged avec pre-commit hook (lint + typecheck + tests unit). Générer les types TypeScript depuis Supabase (supabase gen types typescript). Scope : pas encore de logique métier, juste le scaffold + layouts + login/logout fonctionnel + ensureProfile au 1er login + 1 page dashboard vide + 1 page admin vide.
 ```
 
 Puis `/speckit-clarify` → `/speckit-plan` → `/speckit-tasks` → `/speckit-analyze` → `/speckit-implement`.
@@ -229,4 +243,4 @@ Puis `/speckit-clarify` → `/speckit-plan` → `/speckit-tasks` → `/speckit-a
 
 ---
 
-*Dernière mise à jour : 2026-04-23 — après merge PR #1 (feature 001 Supabase LIVE).*
+*Dernière mise à jour : 2026-04-24 — après merges PR #1 (001 Supabase LIVE), PR #3 (docs Sprint 0), PR #4 (RBAC 5 rôles), PR #5 (userview interne). Feature 002 spec + clarify en cours sur branche `002-schemas-rls-bootstrap` (5 clarifications intégrées, plan à venir).*
